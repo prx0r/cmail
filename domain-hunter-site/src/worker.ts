@@ -67,6 +67,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid #eee;font-size:.625
 <div class="tabs">
 <div class="tab active" onclick="showTab('check')">Domains</div>
 <div class="tab" onclick="showTab('social')">Socials</div>
+<div class="tab" onclick="showTab('manual')">Manual</div>
 <div class="tab" onclick="showTab('tools')">MCP Tools</div>
 </div>
 
@@ -105,6 +106,22 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid #eee;font-size:.625
 </div>
 </div>
 
+<!-- MANUAL CHECK -->
+<div id="manual-tab" class="hidden">
+<div style="font-size:.625rem;color:#999;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">5 platforms — check manually in your browser</div>
+<div style="font-size:.8125rem;margin-bottom:1rem;color:#66166">These platforms block all automated access. Open each link, see if profile loads.</div>
+<table>
+<thead><tr><th>platform</th><th>url</th><th>taken if</th><th>available if</th></tr></thead>
+<tbody>
+<tr><td>Instagram</td><td><a class="buy" id="ig-link" href="https://www.instagram.com/" target="_blank">instagram.com/</a></td><td>profile loads</td><td>"page isn't available"</td></tr>
+<tr><td>Facebook</td><td><a class="buy" id="fb-link" href="https://www.facebook.com/" target="_blank">facebook.com/</a></td><td>profile loads</td><td>"page isn't available"</td></tr>
+<tr><td>Threads</td><td><a class="buy" id="th-link" href="https://threads.net/@" target="_blank">threads.net/@</a></td><td>profile loads</td><td>"page not found"</td></tr>
+<tr><td>Reddit</td><td><a class="buy" id="rd-link" href="https://www.reddit.com/user/" target="_blank">reddit.com/user/</a></td><td>profile loads</td><td>"nobody goes by that name"</td></tr>
+<tr><td>Twitch</td><td><a class="buy" id="tw-link" href="https://www.twitch.tv/" target="_blank">twitch.tv/</a></td><td>channel loads</td><td>"time machine" page</td></tr>
+</tbody>
+</table>
+</div>
+
 <!-- MCP TOOLS -->
 <div id="tools-tab" class="hidden">
 <div style="font-size:.625rem;color:#999;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">23 MCP tools — agent-callable</div>
@@ -139,12 +156,34 @@ const PLATFORMS=[
 {id:'gitlab',name:'GitLab',free:false,icon:'G'},
 {id:'soundcloud',name:'SoundCloud',free:false,icon:'S'},
 {id:'pinterest',name:'Pinterest',free:false,icon:'P'},
+{id:'instagram',name:'Instagram',free:false,icon:'I',blocked:true},
+{id:'facebook',name:'Facebook',free:false,icon:'F',blocked:true},
+{id:'threads',name:'Threads',free:false,icon:'T',blocked:true},
+{id:'reddit',name:'Reddit',free:false,icon:'R',blocked:true},
+{id:'twitch',name:'Twitch',free:false,icon:'T',blocked:true},
 ];
 let selectedPlatforms=PLATFORMS.map(p=>p.id);
 
 function showTab(t){
 document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.textContent.toLowerCase()===t));
-['check','social','tools'].forEach(id=>\$('#'+id+'-tab').classList.toggle('hidden',id!==t));
+['check','social','manual','tools'].forEach(id=>\$('#'+id+'-tab').classList.toggle('hidden',id!==t));
+if(t==='manual')updateManualLinks();
+}
+
+function updateManualLinks(){
+const q=\$('#dq').value.trim()||\$('#sq').value.trim()||'';
+if(q){
+\$('#ig-link').href='https://www.instagram.com/'+q;
+\$('#ig-link').textContent='instagram.com/'+q;
+\$('#fb-link').href='https://www.facebook.com/'+q;
+\$('#fb-link').textContent='facebook.com/'+q;
+\$('#th-link').href='https://threads.net/@'+q;
+\$('#th-link').textContent='threads.net/@'+q;
+\$('#rd-link').href='https://www.reddit.com/user/'+q;
+\$('#rd-link').textContent='reddit.com/user/'+q;
+\$('#tw-link').href='https://www.twitch.tv/'+q;
+\$('#tw-link').textContent='twitch.tv/'+q;
+}
 }
 
 function toggleIcons(){
@@ -153,9 +192,11 @@ function toggleIcons(){
 
 function renderIcons(){
 const free=PLATFORMS.filter(p=>p.free);
-const paid=PLATFORMS.filter(p=>!p.free);
+const paid=PLATFORMS.filter(p=>!p.free&&!p.blocked);
+const blocked=PLATFORMS.filter(p=>p.blocked);
 \$('#freeIcons').innerHTML=free.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected':'')+'" data-id="'+p.id+'"><span class="dot dot-free"></span>'+p.name+'</div>').join('');
 \$('#paidIcons').innerHTML=paid.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected paid':'')+'" data-id="'+p.id+'"><span class="dot dot-paid"></span>'+p.name+'</div>').join('');
+\$('#blockedIcons').innerHTML=blocked.map(p=>'<div class="icon-chip" data-id="'+p.id+'" style="opacity:.5;border-style:dashed" title="manual check required"><span class="dot" style="background:#999"></span>'+p.name+'</div>').join('');
 document.querySelectorAll('.icon-chip').forEach(el=>{el.onclick=()=>togglePlatform(el.dataset.id)});
 updateCost();
 }

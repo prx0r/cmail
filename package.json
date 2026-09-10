@@ -14,6 +14,7 @@
     "wrangler": "^4.129.0"
   },
   "dependencies": {
-    "apify-client": "^2.25.0"
+    "apify-client": "^2.25.0",
+    "playwright": "^1.63.0"
   }
 }
