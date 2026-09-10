@@ -1,5 +1,7 @@
 import type { Env } from "./do";
 import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains, fullSocialCheck } from "./names";
+import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } from "./tasks";
+import { startPipeline } from "./pipeline";
 
 // MCP primary interface: list/search/read/draft/reply/send/archive + ask.
 // Drafts are default; SEND requires explicit permission + human confirm.
@@ -11,6 +13,8 @@ const TOOLS = [
   "name.check", "name.verify_domain", "name.check_handles", "name.search", "name.social",
   "name.cf_check", "name.cf_purchase", "name.wire_email",
   "name.phone_search", "name.phone_list", "name.phone_purchase", "name.read_sms",
+  "task.create", "task.list", "task.get", "task.deliver", "task.complete",
+  "pipeline.start", "pipeline.status",
 ];
 
 const CORS = {
@@ -215,6 +219,55 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       const limit = Number(args.limit) || 10;
       const messages = readSms(to, limit);
       return Response.json({ to, messages, count: messages.length });
+    }
+    // === TASK MANAGEMENT ===
+    case "task.create": {
+      const kind = args.kind || "agent";
+      const summary = String(args.summary ?? "");
+      if (!summary) return Response.json({ error: "summary required" }, { status: 400 });
+      const task = createTask(kind, summary, {
+        needed_from: args.needed_from,
+        payload: args.payload,
+        blocked_by: args.blocked_by,
+        ttl_hours: args.ttl_hours,
+        confirm_text: args.confirm_text,
+      });
+      return Response.json(task);
+    }
+    case "task.list": {
+      const tasks = listTasks(args.kind);
+      return Response.json({ tasks, count: tasks.length });
+    }
+    case "task.get": {
+      const task = getTask(args.id);
+      if (!task) return Response.json({ error: "task not found" }, { status: 404 });
+      return Response.json(task);
+    }
+    case "task.deliver": {
+      const task = getTask(args.id);
+      if (!task) return Response.json({ error: "task not found" }, { status: 404 });
+      const delivered = deliverTask(args.id, args.payload);
+      return Response.json(delivered);
+    }
+    case "task.complete": {
+      const task = getTask(args.id);
+      if (!task) return Response.json({ error: "task not found" }, { status: 404 });
+      const completed = completeTask(args.id);
+      return Response.json(completed);
+    }
+    // === PIPELINE ===
+    case "pipeline.start": {
+      const name = String(args.name ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+      if (!name) return Response.json({ error: "name required" }, { status: 400 });
+      const result = startPipeline(name);
+      return Response.json(result);
+    }
+    case "pipeline.status": {
+      const tasks = listTasks();
+      const open = tasks.filter(t => t.status === "open");
+      const predicted = tasks.filter(t => t.status === "predicted");
+      const done = tasks.filter(t => t.status === "done");
+      return Response.json({ total: tasks.length, open: open.length, predicted: predicted.length, done: done.length, tasks });
     }
     default: return Response.json({ error: "unknown tool", tools: TOOLS }, { status: 400 });
   }
