@@ -146,7 +146,16 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
         return Response.json({
           mode: "preview",
           ...check,
-          note: "set confirmed:true to actually purchase (real money). Optionally pass contact: {firstName, lastName, email, address1, city, state, postalCode, country, phone}",
+          note: "set confirmed:true AND confirm_text:'BUY {domain}' to actually purchase",
+        });
+      }
+      // MUST include confirm_text matching "BUY {domain}"
+      const expectedText = `BUY ${domain}`;
+      if (args.confirm_text !== expectedText) {
+        return Response.json({
+          error: "confirm_text required",
+          expected: expectedText,
+          note: "Set confirm_text:'BUY " + domain + "' to confirm purchase. This prevents accidental buys.",
         });
       }
       // Actually purchase
