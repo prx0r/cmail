@@ -1,0 +1,6 @@
+name = "names-hunter"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+CMAIL_URL = "https://cmail.tradesprior.workers.dev"
