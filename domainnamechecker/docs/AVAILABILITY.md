@@ -12,10 +12,19 @@ throughout: **report the method's actual strength; unknown beats a wrong green.*
 | npm / PyPI / crates.io | registry APIs | 200 / 404 | high |
 | ENS | ensideas resolve | address set / zero | medium-high |
 | **YouTube** | **Data API v3 `channels.list?forHandle=`** (key in worker secret `YT_API_KEY`) | items 1 / 0 | high |
-| App Store | iTunes Search exact-match | exact hit / none | medium (Apple 429s datacenter IPs → unknown) |
+| App Store | iTunes Search exact-match | exact hit / none | medium (Apple 429s datacenter IPs → unknown; KV-cached 6h) |
 | TikTok | oEmbed (`author_name` vs `Something went wrong`) | body match | medium |
 
-## Solvable with the right pipe (not from datacenter IPs)
+## Solved with operator keys (env secrets, documented risk)
+
+| Platform | Method | State |
+|---|---|---|
+| Twitch | Helix `users?login` via client-credentials (free app) — `TWITCH_CLIENT_ID/SECRET` | built, awaiting keys |
+| Reddit | app-only OAuth `user/about.json` — `REDDIT_CLIENT_ID/SECRET` | built, awaiting keys |
+| Instagram / X / TikTok-gated | operator session passthrough (`IG_SESSIONID`, `X_AUTH_TOKEN`, `TIKTOK_COOKIE`) — your own sessions, low volume | built, awaiting sessions |
+| LinkedIn | **verdict: manual-only** — no public, no oEmbed, blocks servers | not building; checklist link |
+
+## Solvable with someone else's pipe (not from datacenter IPs)
 
 | Platform | Why servers fail | Deterministic path |
 |---|---|---|

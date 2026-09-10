@@ -720,22 +720,59 @@ const HANDLE_CHECKS = [
 ];
 
 const HANDLE_UNKNOWN = [
-  { platform: 'reddit', label: 'Reddit', reason: '403 to server callers regardless of handle' },
+  { platform: 'reddit', label: 'Reddit', reason: 'needs REDDIT_CLIENT_ID/SECRET (free OAuth app) — anonymous 403s' },
   { platform: 'linkedin', label: 'LinkedIn', reason: 'blocks server-side requests' },
 ];
 
 function escRx(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Authed fetch: optional user-supplied sessions unlock deterministic checks
+// (IG_SESSIONID, X_AUTH_TOKEN, TIKTOK_COOKIE as worker secrets — the operator's
+// own sessions, low volume. Without them these platforms stay honestly unknown.)
+function authHeaders(env, platform) {
+  const h = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' };
+  const cookies = [];
+  if (env) {
+    if (platform === 'instagram' && env.IG_SESSIONID) cookies.push('sessionid=' + env.IG_SESSIONID);
+    if (platform === 'x' && env.X_AUTH_TOKEN) cookies.push('auth_token=' + env.X_AUTH_TOKEN);
+    if (platform === 'tiktok' && env.TIKTOK_COOKIE) cookies.push(env.TIKTOK_COOKIE);
+  }
+  if (cookies.length) h['Cookie'] = cookies.join('; ');
+  return h;
+}
+function hasAuth(env, platform) {
+  if (!env) return false;
+  if (platform === 'instagram') return !!env.IG_SESSIONID;
+  if (platform === 'x') return !!env.X_AUTH_TOKEN;
+  if (platform === 'tiktok') return !!env.TIKTOK_COOKIE;
+  return false;
+}
+
+// KV cache: 6h TTL. Survives rate-limit storms; repeat checks are instant.
+async function cacheGet(env, key) {
+  try {
+    if (!env || !env.HCACHE) return null;
+    const v = await env.HCACHE.get(key, 'json');
+    return v;
+  } catch (e) { return null; }
+}
+async function cachePut(env, key, val) {
+  try {
+    if (!env || !env.HCACHE) return;
+    await env.HCACHE.put(key, JSON.stringify(val), { expirationTtl: 21600 });
+  } catch (e) { /* cache is best-effort */ }
+}
+
 // Sherlock-style profile probing: status codes lie (IG/TikTok return 200 for
 // free handles), but page CONTENT differs. taken markers = profile data present;
 // free markers = "not available" page. Ambiguous → unknown, never a guess.
-async function probeProfile(def, name) {
+async function probeProfile(def, name, env) {
   const url = def.url(name);
   const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
   if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url };
   let html = '';
   try {
-    const r = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' } });
+    const r = await fetch(url, { redirect: 'manual', headers: authHeaders(env, def.platform) });
     if (def.freeStatus && def.freeStatus.includes(r.status))
       return { platform: def.platform, label: def.label, status: 'available', confidence: 'high', source: 'live-' + r.status, url };
     html = await r.text();
@@ -814,8 +851,8 @@ const HANDLE_RULES = {
   instagram: u => /^[a-z0-9._]{1,30}$/.test(u) ? null : 'Instagram: ≤30 chars, lowercase/numbers/./_',
 };
 
-async function checkHandle(def, name) {
-  if (def.useProbe || def.takenMarkers || def.freeMarkers) return probeProfile(def, name);
+async function checkHandle(def, name, env) {
+  if (def.useProbe || def.takenMarkers || def.freeMarkers) return probeProfile(def, name, env);
   const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
   if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url: def.url(name) };
   try {
@@ -826,6 +863,38 @@ async function checkHandle(def, name) {
   } catch (e) {
     return { platform: def.platform, label: def.label, status: 'unknown', reason: 'fetch failed', url: def.url(name) };
   }
+}
+
+async function checkTwitchAPI(name, env) {
+  // Deterministic via Helix (free app token). No secrets → null (markers stand).
+  if (!env || !env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) return null;
+  try {
+    const t = await fetch('https://id.twitch.tv/oauth2/token?client_id=' + encodeURIComponent(env.TWITCH_CLIENT_ID) + '&client_secret=' + encodeURIComponent(env.TWITCH_CLIENT_SECRET) + '&grant_type=client_credentials', { method: 'POST' });
+    if (!t.ok) return { status: 'unknown', reason: 'twitch auth failed' };
+    const tok = (await t.json()).access_token;
+    const r = await fetch('https://api.twitch.tv/helix/users?login=' + encodeURIComponent(name.toLowerCase()), { headers: { 'Client-Id': env.TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + tok } });
+    if (r.status === 401 || r.status === 429) return { status: 'unknown', reason: 'twitch limit' };
+    if (!r.ok) return null;
+    const d = await r.json();
+    return ((d.data || []).length > 0)
+      ? { status: 'taken', confidence: 'high', source: 'twitch-helix' }
+      : { status: 'available', confidence: 'high', source: 'twitch-helix' };
+  } catch (e) { return null; }
+}
+
+async function checkRedditAPI(name, env) {
+  // Deterministic via app-only OAuth. No secrets → null (stays unknown).
+  if (!env || !env.REDDIT_CLIENT_ID || !env.REDDIT_CLIENT_SECRET) return null;
+  try {
+    const basic = btoa(env.REDDIT_CLIENT_ID + ':' + env.REDDIT_CLIENT_SECRET);
+    const t = await fetch('https://www.reddit.com/api/v1/access_token?grant_type=client_credentials&duration=temporary', { method: 'POST', headers: { 'Authorization': 'Basic ' + basic, 'User-Agent': 'domainnamechecker/1.0' } });
+    if (!t.ok) return { status: 'unknown', reason: 'reddit auth failed' };
+    const tok = (await t.json()).access_token;
+    const r = await fetch('https://oauth.reddit.com/user/' + encodeURIComponent(name) + '/about.json', { headers: { 'Authorization': 'Bearer ' + tok, 'User-Agent': 'domainnamechecker/1.0' } });
+    if (r.status === 404) return { status: 'available', confidence: 'high', source: 'reddit-oauth' };
+    if (!r.ok) return { status: 'unknown', reason: 'reddit HTTP ' + r.status };
+    return { status: 'taken', confidence: 'high', source: 'reddit-oauth' };
+  } catch (e) { return null; }
 }
 
 async function checkEns(name) {
@@ -845,7 +914,24 @@ async function checkEns(name) {
 
 async function checkHandles(name, env) {
   const clean = String(name || '').trim().replace(/^@/, '');
-  const live = await Promise.all(HANDLE_CHECKS.map(d => checkHandle(d, clean)));
+  const cacheKey = 'handles:' + clean.toLowerCase();
+  const hit = await cacheGet(env, cacheKey);
+  if (hit && hit.handles) return hit;
+  const live = await Promise.all(HANDLE_CHECKS.map(d => checkHandle(d, clean, env)));
+  // keyed API overrides (deterministic > sniffing)
+  try {
+    const tw = await checkTwitchAPI(clean, env);
+    if (tw && tw.status !== 'unknown') {
+      const i = live.findIndex(h => h.platform === 'twitch');
+      if (i >= 0) live[i] = { platform: 'twitch', label: 'Twitch', ...tw, url: 'https://www.twitch.tv/' + clean.toLowerCase() };
+    }
+    const rd = await checkRedditAPI(clean, env);
+    if (rd && rd.status !== 'unknown') {
+      const i = live.findIndex(h => h.platform === 'reddit');
+      if (i >= 0) live[i] = { platform: 'reddit', label: 'Reddit', ...rd, url: 'https://www.reddit.com/user/' + clean };
+      else live.push({ platform: 'reddit', label: 'Reddit', ...rd, url: 'https://www.reddit.com/user/' + clean });
+    }
+  } catch (e) { /* probe results stand */ }
   // YouTube Data API overrides the probe when keyed (deterministic > sniff).
   try {
     const yt = await checkYouTubeAPI(clean, env);
@@ -864,7 +950,9 @@ async function checkHandles(name, env) {
   });
   const handles = [...live, ...(ens ? [ens] : []), ...apps, ...unknown];
   const free = handles.filter(h => h.status === 'available').length;
-  return { name: clean, handles, summary: { checked: handles.length, available: free } };
+  const out = { name: clean, handles, summary: { checked: handles.length, available: free } };
+  await cachePut(env, cacheKey, out);
+  return out;
 }
 
 async function claimKit(domain, handleName) {
