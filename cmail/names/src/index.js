@@ -124,7 +124,25 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
     if (url.pathname === '/') return new Response(LANDING, { headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS } });
-    if (url.pathname === '/api/health') return Response.json({ status: 'healthy', version: '1.0.0' }, { headers: CORS });
+    if (url.pathname === '/api/health') return Response.json({ status: 'healthy', version: '1.1.0', tools: ['check_all'] }, { headers: CORS });
+    if (url.pathname === '/mcp' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const { method, params, id } = body;
+      if (method === 'tools/list') {
+        return Response.json({ jsonrpc: '2.0', id, result: { tools: [
+          { name: 'check_all', description: 'One name across domains (6 TLDs), socials/packages/web3, app stores. 5-state verdicts, never guessed.', inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
+        ] } }, { headers: CORS });
+      }
+      if (method === 'tools/call' && params && params.name === 'check_all') {
+        try {
+          const result = await checkAll(params.arguments && params.arguments.name, env);
+          return Response.json({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } }, { headers: CORS });
+        } catch (e) {
+          return Response.json({ jsonrpc: '2.0', id, error: { code: -32000, message: String(e && e.message || e).slice(0, 200) } }, { headers: CORS });
+        }
+      }
+      return Response.json({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } }, { headers: CORS });
+    }
     if (url.pathname === '/api/debug') {
       try {
         const r = await fetch(CHECKER + '/api/health');
