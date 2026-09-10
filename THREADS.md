@@ -35,6 +35,8 @@
 
 ## Closed (do not reopen)
 
+Repo docs · push script (`scripts/sync-push.sh`) + `BOOTSTRAP.md` (repo runs itself now) ·
+
 R2 backups · drafts UI · renewal sync · quarantine · call-back gate · VAT ·
 feed ordering · 3 registrar providers · handles + claim_kit · registrar token ·
 repo docs · this triage.
