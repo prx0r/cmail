@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.dev.vars
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+*.db
+*.db-shm
+*.db-wal
+.env
+dist/
+build/
