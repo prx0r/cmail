@@ -202,13 +202,37 @@ class CloudflareDNS:
         return d.get("result", {})
 
     def enable_routing(self, zone_id: str) -> dict:
-        return self._api("POST", f"/zones/{zone_id}/email/routing/enable", {})
+        # Current API: POST .../email/routing/dns (adds CF MX). /enable is deprecated.
+        return self._api("POST", f"/zones/{zone_id}/email/routing/dns", {})
+
+    def add_subdomain_mx(self, zone_id: str, sub: str) -> list[dict]:
+        """Subdomain mail without touching root MX (root stays on Zoho etc.).
+        Verified live 2026-09-10 on tantrafiles.xyz."""
+        out = []
+        for prio, host in ((63, "route1.mx.cloudflare.net."), (17, "route2.mx.cloudflare.net."),
+                           (55, "route3.mx.cloudflare.net.")):
+            out.append(self._api("POST", f"/zones/{zone_id}/dns_records",
+                                 {"type": "MX", "name": sub, "content": host,
+                                  "priority": prio, "ttl": 1}))
+        return out
+
+    def route_address_to_worker(self, zone_id: str, address: str, worker_name: str,
+                                rule_name: str = "cmail") -> dict:
+        d = self._api("POST", f"/zones/{zone_id}/email/routing/rules", {
+            "name": rule_name, "enabled": True, "priority": 0,
+            "actions": [{"type": "worker", "value": [worker_name]}],
+            "matchers": [{"type": "literal", "field": "to", "value": address}],
+        })
+        return d.get("result", d)
 
     def catchall_to_worker(self, zone_id: str, worker_name: str) -> dict:
-        return self._api("POST", f"/zones/{zone_id}/email/routing/rules", {
+        # Current API: PUT .../rules/catch_all (not POST /rules).
+        d = self._api("PUT", f"/zones/{zone_id}/email/routing/rules/catch_all", {
+            "name": "cmail catch-all", "enabled": True,
             "actions": [{"type": "worker", "value": [worker_name]}],
-            "matchers": [{"type": "all"}], "enabled": True, "name": "cmail catch-all",
+            "matchers": [{"type": "all"}],
         })
+        return d.get("result", d)
 
 
 def idempotency_key(*parts: str) -> str:
