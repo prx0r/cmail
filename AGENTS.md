@@ -37,8 +37,8 @@ curl -X POST https://cmail.tradesprior.workers.dev/mcp \
 - `name.social` — Handles + suggestions for taken platforms
 
 ### Phone (2)
-- `name.phone_search` — Telnyx number search
-- `name.read_sms` — Read received SMS
+- `name.phone_search` — Telnyx number search ✅
+- `name.read_sms` — Read received SMS ✅
 
 ### Email (6)
 - email.list_domains, email.inbox, email.search, email.read, email.draft, email.send
@@ -75,7 +75,7 @@ curl -X POST https://cmail.tradesprior.workers.dev/mcp \
 ## Secrets (agent-vault oracle)
 ```
 CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_WORKERS_TOKEN,
-CLOUDFLARE_REGISTRAR_TOKEN, APIFY_TOKEN
+CLOUDFLARE_REGISTRAR_TOKEN, APIFY_TOKEN, TELNYX_API_KEY
 ```
 
 ## Key Files
