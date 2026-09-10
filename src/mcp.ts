@@ -121,7 +121,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
     case "name.social": {
       const name = String(args.name ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
       if (!name) return Response.json({ error: "name required" }, { status: 400 });
-      const report = await fullSocialCheck(name);
+      const report = await fullSocialCheck(name, env as any);
       return Response.json(report);
     }
     case "name.cf_check": {

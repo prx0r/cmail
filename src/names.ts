@@ -123,7 +123,7 @@ const HANDLE_CHECKS: Array<{
   { platform: 'github', label: 'GitHub', url: u => `https://api.github.com/users/${u}`, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
   { platform: 'x', label: 'X', url: u => `https://x.com/${u}`, freeStatus: [404], takenMarkers: u => ['This account doesn&#39;t exist', "This account doesn't exist"], conf: 'medium', rule: '≤15 chars, letters/numbers/_' },
   { platform: 'youtube', label: 'YouTube', url: u => `https://www.youtube.com/@${u}`, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars' },
-  { platform: 'instagram', label: 'Instagram', url: u => `https://www.instagram.com/${u}/`, freeMarkers: () => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'low', rule: '≤30 chars, lowercase/numbers/./_', note: 'JS-rendered — server-side returns 200 for all. Manual check recommended.' },
+  { platform: 'instagram', label: 'Instagram', url: u => `https://www.instagram.com/${u}/`, conf: 'high', rule: '≤30 chars, lowercase/numbers/./_', note: 'Uses Apify API when APIFY_TOKEN set' },
   { platform: 'tiktok', label: 'TikTok', url: u => `https://www.tiktok.com/@${u}`, freeMarkers: () => ["couldn't find this account", 'page not found', 'not found'], takenMarkers: u => [`"uniqueId":"${u}"`, `"nickname":"${u}"`], conf: 'medium', rule: '2–24 chars', pageCheck: true },
   { platform: 'twitch', label: 'Twitch', url: u => `https://www.twitch.tv/${u.toLowerCase()}`, takenMarkers: u => [`"login":"${u.toLowerCase()}"`, 'isLiveBroadcast'], freeMarkers: u => ['time machine'], conf: 'medium', rule: '4–25 chars' },
   { platform: 'npm', label: 'npm', url: u => `https://registry.npmjs.org/${encodeURIComponent(u.toLowerCase())}`, take: [200], free: [404], conf: 'high', rule: 'lowercase, URL-safe' },
@@ -188,6 +188,59 @@ export async function checkHandles(name: string): Promise<HandleResult[]> {
   return Promise.all(HANDLE_CHECKS.map(c => checkOneHandle(name, c)));
 }
 
+// === APIFY SOCIAL CHECK (15 platforms) ===
+
+interface ApifyEnv { APIFY_TOKEN?: string; }
+
+export async function apifySocialCheck(name: string, env: ApifyEnv): Promise<HandleResult[]> {
+  const token = env.APIFY_TOKEN;
+  if (!token) return [];
+
+  try {
+    // Start run
+    const startR = await fetch(`https://api.apify.com/v2/acts/corent1robert~social-handle-checker/runs?token=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handles: [name], coverage: 'all' }),
+    });
+    const startD: any = await startR.json();
+    const runId = startD?.data?.id;
+    if (!runId) return [];
+
+    // Poll for completion (max 30s)
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const statusR = await fetch(`https://api.apify.com/v2/acts/corent1robert~social-handle-checker/runs/${runId}?token=${token}`);
+      const statusD: any = await statusR.json();
+      if (statusD?.data?.status === 'SUCCEEDED') {
+        const dsId = statusD.data.defaultDatasetId;
+        const itemsR = await fetch(`https://api.apify.com/v2/datasets/${dsId}/items?token=${token}`);
+        const items: any[] = await itemsR.json();
+        if (items.length > 0) {
+          const row = items[0];
+          const results: HandleResult[] = [];
+          const platformMap: Record<string, string> = {
+            tiktok: 'TikTok', twitter: 'X', youtube: 'YouTube', github: 'GitHub',
+            twitch: 'Twitch', snapchat: 'Snapchat', bluesky: 'Bluesky',
+            telegram: 'Telegram', gitlab: 'GitLab', soundcloud: 'SoundCloud',
+            pinterest: 'Pinterest', reddit: 'Reddit', facebook: 'Facebook',
+            threads: 'Threads', instagram: 'Instagram',
+          };
+          for (const [key, label] of Object.entries(platformMap)) {
+            const val = row[`available_${key}`];
+            if (val === 'yes') results.push({ platform: key, label, status: 'available', confidence: row[`confidence_${key}`] || 'medium', note: 'Apify verified' });
+            else if (val === 'no') results.push({ platform: key, label, status: 'taken', confidence: row[`confidence_${key}`] || 'medium', note: 'Apify verified' });
+            else results.push({ platform: key, label, status: 'unknown', confidence: 'low', note: 'Apify error' });
+          }
+          return results;
+        }
+      }
+      if (statusD?.data?.status === 'FAILED' || statusD?.data?.status === 'ABORTED') break;
+    }
+  } catch { /* fall through to empty */ }
+  return [];
+}
+
 // === HANDLE SUGGESTIONS ===
 
 const SUFFIXES = ['official', 'app', 'hq', 'team', 'io', 'dev', 'xyz', 'co', 'lab', 'hub', 'site', 'online', 'get', 'try', 'use', 'go', 'the', 'my', 'we'];
@@ -243,23 +296,32 @@ export interface SocialReport {
   allSuggestions: HandleSuggestion[];
 }
 
-export async function fullSocialCheck(name: string): Promise<SocialReport> {
-  const handles = await checkHandles(name);
-  const taken = handles.filter(h => h.status === 'taken').map(h => h.platform);
-  const available = handles.filter(h => h.status === 'available').map(h => h.platform);
-  const unknown = handles.filter(h => h.status === 'unknown').map(h => h.platform);
+export async function fullSocialCheck(name: string, env?: ApifyEnv): Promise<SocialReport> {
+  // Custom checks (GitHub, npm, PyPI, crates - fast, reliable)
+  const customHandles = await checkHandles(name);
+
+  // Apify check (15 platforms - TikTok, X, YouTube, Twitch, Snapchat, Bluesky, etc.)
+  const apifyHandles = env ? await apifySocialCheck(name, env) : [];
+
+  // Merge: custom handles take priority for platforms we check locally
+  const customPlatforms = new Set(customHandles.map(h => h.platform));
+  const merged = [...customHandles, ...apifyHandles.filter(h => !customPlatforms.has(h.platform))];
+
+  const taken = merged.filter(h => h.status === 'taken').map(h => h.platform);
+  const available = merged.filter(h => h.status === 'available').map(h => h.platform);
+  const unknown = merged.filter(h => h.status === 'unknown').map(h => h.platform);
 
   // Generate suggestions for taken platforms
   const allSuggestions = suggestHandles(name, taken, []);
 
   // Attach top suggestions to each taken handle
-  for (const h of handles) {
+  for (const h of merged) {
     if (h.status === 'taken') {
       h.suggestions = allSuggestions.slice(0, 3);
     }
   }
 
-  return { name, handles, taken, available, unknown, allSuggestions };
+  return { name, handles: merged, taken, available, unknown, allSuggestions };
 }
 
 // === UNIFIED AVAILABILITY CHECK ===
