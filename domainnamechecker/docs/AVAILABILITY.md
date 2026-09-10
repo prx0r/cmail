@@ -52,3 +52,17 @@ logged-in session we don't have.
   `checkAppStores` (iTunes + Play sniff), YouTube via `YT_API_KEY` secret.
 - Rule violations (X 15-char cap etc.) report the rule, never a status.
 - Conflicting markers or fetch failures → `unknown` with reason. Always.
+
+## Validation log (2026-09-10, live, both directions)
+
+| Probe | Result | Verdict |
+|---|---|---|
+| `octocat` / `zzqfreexyz12345` full sweep | npm/PyPI/crates/YouTube/ENS correct both ways | deterministic confirmed |
+| GitHub `octocat` once `unknown` | shared-IP 403 budget exhausts intermittently | flaky: works ~mostly, unknown on 403 (never wrong) |
+| Twitch `ninja`, X `elonmusk` | `unknown` (login walls from datacenter) | session/key required — confirmed unobservable anon |
+| `vitalik.eth` via ensideas | correct address returned | resolver trusted (medium-high) |
+| iTunes repeated calls | 429s under load, KV cache covers repeats | flaky, cache mitigates |
+| `postagi.trade` | unknown → available 0.95 after IANA fallback | bootstrap proven on unmapped TLD |
+| Nitter (`nitter.net`) | 200 for taken AND free | dead as oracle — rejected |
+| IG `web_profile_info` without session | 400 both ways | session required — confirmed |
+| TikTok oEmbed free vs `@notaurl` (taken by aurel) | `Something went wrong` vs author JSON | body-match model confirmed |
