@@ -514,7 +514,7 @@ export async function cfCheckDomain(domain: string, env: CfEnv): Promise<any> {
   };
 }
 
-export async function cfRegisterDomain(domain: string, env: CfEnv): Promise<any> {
+export async function cfRegisterDomain(domain: string, env: CfEnv, contact?: any): Promise<any> {
   const token = env.CLOUDFLARE_API_TOKEN;
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   if (!token || !accountId) return { error: "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID required" };
@@ -524,10 +524,32 @@ export async function cfRegisterDomain(domain: string, env: CfEnv): Promise<any>
   if (check.error) return check;
   if (!check.registrable) return { error: `domain not registrable: ${check.reason || "unknown"}`, check };
 
+  const body: any = { domain_name: domain };
+  if (contact) {
+    body.contacts = {
+      registrant: {
+        first_name: contact.firstName || "Agent",
+        last_name: contact.lastName || "User",
+        email: contact.email || "noreply@cmail.tradesprior.workers.dev",
+        phone: contact.phone || "+1.5555551234",
+        postal_info: {
+          name: `${contact.firstName || "Agent"} ${contact.lastName || "User"}`,
+          address: {
+            street: contact.address1 || "123 Main St",
+            city: contact.city || "San Francisco",
+            state: contact.state || "CA",
+            postal_code: contact.postalCode || "94105",
+            country_code: contact.country || "US",
+          }
+        }
+      }
+    };
+  }
+
   const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/registrar/registrations`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ domain_name: domain }),
+    body: JSON.stringify(body),
   });
   const d: any = await r.json();
   if (!d.success) return { error: d.errors?.[0]?.message || "registration failed", raw: d };

@@ -146,11 +146,12 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
         return Response.json({
           mode: "preview",
           ...check,
-          note: "set confirmed:true to actually purchase (real money)",
+          note: "set confirmed:true to actually purchase (real money). Optionally pass contact: {firstName, lastName, email, address1, city, state, postalCode, country, phone}",
         });
       }
       // Actually purchase
-      const result = await cfRegisterDomain(domain, env as any);
+      const contact = args.contact || undefined;
+      const result = await cfRegisterDomain(domain, env as any, contact);
       // Log to audit
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
         .bind(actor, "cf_purchase", domain, JSON.stringify(result)).run();
