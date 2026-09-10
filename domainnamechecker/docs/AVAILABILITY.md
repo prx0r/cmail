@@ -66,3 +66,39 @@ logged-in session we don't have.
 | Nitter (`nitter.net`) | 200 for taken AND free | dead as oracle — rejected |
 | IG `web_profile_info` without session | 400 both ways | session required — confirmed |
 | TikTok oEmbed free vs `@notaurl` (taken by aurel) | `Something went wrong` vs author JSON | body-match model confirmed |
+
+## The instagram.com/{user} question — settled empirically
+
+Hypothesis: "page exists = taken, nothing = free." Test, 2026-09-10:
+
+```
+curl instagram.com/instagram/ → 302, 0 bytes   (TAKEN account)
+curl instagram.com/dualipa/   → 302, 0 bytes   (TAKEN account)
+```
+
+Identical responses for taken accounts, and free handles return the same
+login-redirect shape from datacenter IPs. **The method has ~0% decisiveness
+from servers** — not because the logic is wrong (it works in browsers on
+residential IPs), but because Instagram filters datacenter ASNs *before
+authentication*: flagged ranges get the wall regardless of handle state.
+
+Industry consensus (ipburger, HikerAPI, instagrapi docs, 2025–2026):
+datacenter IPs flagged pre-first-request; ~30 req/min triggers 403s;
+login-based scraping gets the *account* banned within minutes; residential
+is the floor ($10–30/GB), mobile stronger; managed APIs (Apify residential
+actors, HikerAPI, Zyla ~$21/mo) externalize exactly this arms race.
+
+Our posture, therefore:
+- server-side IG = `unknown` with reason, always (a false FREE is the
+  dangerous direction — user makes business decisions on it);
+- optional `IG_SESSIONID` passthrough for the operator's own low-volume checks;
+- managed-API adapter slot reserved (Apify actor call ≈ 30 lines when funded).
+
+Reliability table (observed, datacenter egress):
+
+| Method | Taken detected | Free detected | False-free rate |
+|---|---|---|---|
+| RDAP / registries / GitHub API / YT API | ~100% | ~100% | ~0% |
+| TikTok oEmbed / X 404 / iTunes | ~90% | ~90% | low |
+| IG profile polling (server) | ~0% | ~0% | would-be ~50% if forced — hence unknown |
+| IG via residential/session | ~95%+ (industry) | ~95%+ | low |
