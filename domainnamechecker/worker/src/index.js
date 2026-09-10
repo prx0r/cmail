@@ -763,6 +763,8 @@ async function cachePut(env, key, val) {
   } catch (e) { /* cache is best-effort */ }
 }
 
+import SHERLOCK_SITES from './sherlock-sites.json';
+
 // Sherlock-style profile probing: status codes lie (IG/TikTok return 200 for
 // free handles), but page CONTENT differs. taken markers = profile data present;
 // free markers = "not available" page. Ambiguous → unknown, never a guess.
@@ -831,6 +833,52 @@ async function checkYouTubeAPI(name, env) {
   }
 }
 
+const WALL_MARKERS = ['login', 'challenge', 'captcha', 'checkpoint', 'verify you are human', 'unusual traffic', 'robot check', 'access denied', 'edge_'];
+function wallDetected(text) {
+  // Maigret insight: censorship/captcha walls must be explicit states, not misread.
+  const low = String(text || '').slice(0, 20000).toLowerCase();
+  return WALL_MARKERS.some(m => low.includes(m));
+}
+async function checkSherlockSite(name, siteKey, entry) {
+  // Generic Sherlock data.json engine mapped to our 5 states.
+  // errorType status_code/message/response_url describe the ABSENCE signal.
+  try {
+    const template = entry.urlProbe || entry.url;
+    if (!template || !template.includes('{}')) return null;
+    const url = template.replace('{}', encodeURIComponent(name));
+    const headers = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9', ...(entry.headers || {}) };
+    const r = await fetch(url, { redirect: 'follow', headers });
+    const text = await r.text();
+    if (wallDetected(text) && !text.toLowerCase().includes(name.toLowerCase()))
+      return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'unknown', reason: 'wall-detected', url };
+    const et = entry.errorType || 'message';
+    const low = text.toLowerCase();
+    const uname = name.toLowerCase();
+    if (et === 'status_code') {
+      const codes = entry.errorCode || [404];
+      if (codes.includes(r.status)) return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'not_found', confidence: 'low', source: 'sherlock-stratum', url };
+    } else if (et === 'message') {
+      const msgs = Array.isArray(entry.errorMsg) ? entry.errorMsg : [entry.errorMsg].filter(Boolean);
+      if (msgs.some(m => low.includes(String(m).toLowerCase())))
+        return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'not_found', confidence: 'low', source: 'sherlock-stratum', url };
+    } else if (et === 'response_url') {
+      const eu = entry.errorUrl || '';
+      if (r.url === eu || (eu && r.url.includes(eu)))
+        return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'not_found', confidence: 'low', source: 'sherlock-stratum', url };
+    }
+    if (low.includes(uname))
+      return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'taken', confidence: 'low', source: 'sherlock-stratum', note: 'username echoed in page; wall-risk applies', url };
+    return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'unknown', reason: 'no decisive signal', url };
+  } catch (e) {
+    return { platform: 'sherlock:' + siteKey, label: siteKey, status: 'unknown', reason: 'fetch failed', url: (entry.url || '').replace('{}', name) };
+  }
+}
+async function checkSherlockTail(name) {
+  const out = [];
+  const entries = Object.entries(SHERLOCK_SITES).slice(0, 40);
+  const results = await Promise.all(entries.map(([k, v]) => checkSherlockSite(name, k, v)));
+  return results.filter(Boolean);
+}
 async function checkAppStores(name) {
   // iOS: iTunes Search API — free, no key, authoritative-ish exact-match scan.
   // Play: no official API — page content sniff (medium), unknown on ambiguity.
@@ -1023,7 +1071,8 @@ async function checkHandles(name, env) {
       ? { platform: u.platform, label: u.label, status: 'invalid', reason: ruleBreak }
       : { platform: u.platform, label: u.label, status: 'unknown', reason: u.reason };
   });
-  const handles = [...live, ...(ens ? [ens] : []), ...apps, ...unknown];
+  const tail = await checkSherlockTail(clean);
+  const handles = [...live, ...(ens ? [ens] : []), ...apps, ...tail, ...unknown];
   const free = handles.filter(h => h.status === 'available').length;
   const unclaimed = handles.filter(h => h.status === 'not_found').length;
   const out = { name: clean, handles, summary: { checked: handles.length, available: free, not_found: unclaimed } };

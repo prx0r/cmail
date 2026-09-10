@@ -102,3 +102,17 @@ Reliability table (observed, datacenter egress):
 | TikTok oEmbed / X 404 / iTunes | ~90% | ~90% | low |
 | IG profile polling (server) | ~0% | ~0% | would-be ~50% if forced — hence unknown |
 | IG via residential/session | ~95%+ (industry) | ~95%+ | low |
+
+## Sherlock integration (vendored engine, 2026-09-10)
+
+`sherlock-sites.json`: 38-site curated subset of sherlock-project/sherlock
+`data.json` (MIT, attributed here). Generic errorType engine
+(status_code/message/response_url) mapped to our 5 states, with two upgrades
+Sherlock lacks: **wall detection** (Maigret insight — login/captcha/challenge
+markers force UNKNOWN instead of misreading) and **low-confidence labeling**
+on all stratum verdicts (taken requires username echo; absence signals yield
+NOT_FOUND, never AVAILABLE).
+
+Known live quirk: Medium `nasa` returned not_found (likely JS-rendered wall
+matching absence text) — contained by low-confidence labeling, not trusted.
+Curated majors (GitHub/YouTube/TikTok/registries) always override the stratum.
