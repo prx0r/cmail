@@ -98,7 +98,7 @@ async function rdapCheck(domain) {
     co: 'https://rdap.nic.co/domain/',
     sh: 'https://rdap.identitydigital.services/rdap/domain/',
   };
-  const base = RDAP[tld];
+  const base = RDAP[tld] || await rdapBootstrap(tld);
   if (!base) return { registered: null, error: 'No RDAP server for .' + tld };
 
   try {
@@ -116,6 +116,31 @@ async function rdapCheck(domain) {
     return { registered: null, error: 'RDAP status: ' + response.status };
   } catch (e) {
     return { registered: null, error: e.message };
+  }
+}
+
+// IANA RDAP bootstrap fallback: resolves ANY TLD's authoritative server.
+// Cached in-memory 24h. Keeps us honest beyond the 10 hardcoded TLDs.
+let _bootstrapCache = null;
+let _bootstrapAt = 0;
+async function rdapBootstrap(tld) {
+  try {
+    const now = Date.now();
+    if (!_bootstrapCache || now - _bootstrapAt > 86400000) {
+      const r = await fetch('https://data.iana.org/rdap/dns.json');
+      if (!r.ok) return null;
+      _bootstrapCache = await r.json();
+      _bootstrapAt = now;
+    }
+    for (const [tlds, urls] of (_bootstrapCache.services || [])) {
+      if (tlds.includes(tld) && urls.length) {
+        const base = urls[0].replace(/\/$/, '');
+        return base + '/domain/';
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
   }
 }
 
