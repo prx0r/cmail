@@ -154,8 +154,9 @@ function toggleIcons(){
 function renderIcons(){
 const free=PLATFORMS.filter(p=>p.free);
 const paid=PLATFORMS.filter(p=>!p.free);
-\$('#freeIcons').innerHTML=free.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected':'')+'" onclick="togglePlatform(\''+p.id+'\')"><span class="dot dot-free"></span>'+p.name+'</div>').join('');
-\$('#paidIcons').innerHTML=paid.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected paid':'')+'" onclick="togglePlatform(\''+p.id+'\')"><span class="dot dot-paid"></span>'+p.name+'</div>').join('');
+\$('#freeIcons').innerHTML=free.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected':'')+'" data-id="'+p.id+'"><span class="dot dot-free"></span>'+p.name+'</div>').join('');
+\$('#paidIcons').innerHTML=paid.map(p=>'<div class="icon-chip'+(selectedPlatforms.includes(p.id)?' selected paid':'')+'" data-id="'+p.id+'"><span class="dot dot-paid"></span>'+p.name+'</div>').join('');
+document.querySelectorAll('.icon-chip').forEach(el=>{el.onclick=()=>togglePlatform(el.dataset.id)});
 updateCost();
 }
 
