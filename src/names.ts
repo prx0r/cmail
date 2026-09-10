@@ -114,15 +114,17 @@ const HANDLE_CHECKS: Array<{
   freeStatus?: number[];
   takenMarkers?: (u: string) => string[];
   freeMarkers?: (u: string) => string[];
+  pageCheck?: boolean;
   oembed?: boolean;
   conf: string;
   rule: string;
+  note?: string;
 }> = [
   { platform: 'github', label: 'GitHub', url: u => `https://api.github.com/users/${u}`, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
   { platform: 'x', label: 'X', url: u => `https://x.com/${u}`, freeStatus: [404], takenMarkers: u => ['This account doesn&#39;t exist', "This account doesn't exist"], conf: 'medium', rule: '≤15 chars, letters/numbers/_' },
   { platform: 'youtube', label: 'YouTube', url: u => `https://www.youtube.com/@${u}`, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars' },
-  { platform: 'instagram', label: 'Instagram', url: u => `https://www.instagram.com/${u}/`, takenMarkers: u => [`"username"\\s*:\\s*"${escRx(u)}"`, `"edge_followed_by"`], freeMarkers: u => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'medium', rule: '≤30 chars, lowercase/numbers/./_' },
-  { platform: 'tiktok', label: 'TikTok', url: u => `https://www.tiktok.com/oembed?url=${encodeURIComponent(`https://www.tiktok.com/@${u}`)}`, oembed: true, conf: 'medium', rule: '2–24 chars' },
+  { platform: 'instagram', label: 'Instagram', url: u => `https://www.instagram.com/${u}/`, freeMarkers: () => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'low', rule: '≤30 chars, lowercase/numbers/./_', note: 'JS-rendered — server-side returns 200 for all. Manual check recommended.' },
+  { platform: 'tiktok', label: 'TikTok', url: u => `https://www.tiktok.com/@${u}`, freeMarkers: () => ["couldn't find this account", 'page not found', 'not found'], takenMarkers: u => [`"uniqueId":"${u}"`, `"nickname":"${u}"`], conf: 'medium', rule: '2–24 chars', pageCheck: true },
   { platform: 'twitch', label: 'Twitch', url: u => `https://www.twitch.tv/${u.toLowerCase()}`, takenMarkers: u => [`"login":"${u.toLowerCase()}"`, 'isLiveBroadcast'], freeMarkers: u => ['time machine'], conf: 'medium', rule: '4–25 chars' },
   { platform: 'npm', label: 'npm', url: u => `https://registry.npmjs.org/${encodeURIComponent(u.toLowerCase())}`, take: [200], free: [404], conf: 'high', rule: 'lowercase, URL-safe' },
   { platform: 'pypi', label: 'PyPI', url: u => `https://pypi.org/pypi/${encodeURIComponent(u.toLowerCase().replace(/[-_.]+/g, '-'))}/json`, take: [200], free: [404], conf: 'high', rule: 'PEP-normalized' },
@@ -132,7 +134,7 @@ const HANDLE_CHECKS: Array<{
 function escRx(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 async function checkOneHandle(name: string, check: typeof HANDLE_CHECKS[0]): Promise<HandleResult> {
-  const base: HandleResult = { platform: check.platform, label: check.label, status: 'unknown', confidence: check.conf, rule: check.rule };
+  const base: HandleResult = { platform: check.platform, label: check.label, status: 'unknown', confidence: check.conf, rule: check.rule, note: check.note };
   try {
     const url = check.url(name);
     base.url = url;
@@ -167,7 +169,7 @@ async function checkOneHandle(name: string, check: typeof HANDLE_CHECKS[0]): Pro
       }
     }
 
-    // oEmbed (TikTok)
+    // oEmbed (TikTok oembed mode)
     if (check.oembed) {
       try {
         const j = JSON.parse(body);
