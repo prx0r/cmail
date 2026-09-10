@@ -234,7 +234,7 @@ async function getRdapUrl(tld: string): Promise<string | null> {
   const known: Record<string, string> = {
     com: "https://rdap.verisign.com/com/v1/domain/",
     net: "https://rdap.verisign.com/net/v1/domain/",
-    org: "https://rdap.org/domain/",
+    org: "https://rdap.publicinterestregistry.org/rdap/domain/",
     io: "https://rdap.nic.io/domain/",
     dev: "https://rdap.nic.google/domain/",
     ai: "https://rdap.nic.ai/domain/",

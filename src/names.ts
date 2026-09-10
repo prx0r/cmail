@@ -7,14 +7,14 @@
 const RDAP_SERVERS: Record<string, string> = {
   com: 'https://rdap.verisign.com/com/v1/domain/',
   net: 'https://rdap.verisign.com/net/v1/domain/',
-  org: 'https://rdap.org/domain/',
+  org: 'https://rdap.publicinterestregistry.org/rdap/domain/',
   io: 'https://rdap.nic.io/domain/',
-  dev: 'https://rdap.nic.google/domain/',
+  dev: 'https://pubapi.registry.google/rdap/domain/',
   ai: 'https://rdap.nic.ai/domain/',
   co: 'https://rdap.nic.co/domain/',
   sh: 'https://rdap.identitydigital.services/rdap/domain/',
   xyz: 'https://rdap.nic.xyz/domain/',
-  app: 'https://rdap.nic.google/domain/',
+  app: 'https://pubapi.registry.google/rdap/domain/',
   trade: 'https://rdap.nic.trade/domain/',
 };
 
@@ -36,29 +36,39 @@ export async function verifyDomain(domain: string): Promise<VerifyResult> {
     buy_url: CLOUDFLARE_BUY_LINK(domain),
   };
 
-  // DNS probe
+  // DNS probe — check for NXDOMAIN (domain doesn't exist = available)
   try {
     const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${domain}&type=A`, {
       headers: { 'Accept': 'application/dns-json' },
     });
     const data: any = await r.json();
+    const status = data.Status;
+    // Status 3 = NXDOMAIN = domain does not exist = available
+    // Status 0 = NOERROR with Answer = domain has records = taken
+    // Status 0 = NOERROR with Authority only = possible CNAME/nxdomain ambiguity
+    if (status === 3) {
+      // NXDOMAIN — domain definitely doesn't exist
+      result.dns.records = [];
+      result.dns.has_records = false;
+      result.registration = { status: 'available', confidence: 'high' };
+      return result; // RDAP can override, but NXDOMAIN is strong signal
+    }
     result.dns.records = data.Answer || [];
     result.dns.has_records = result.dns.records.length > 0;
   } catch (e: any) {
     result.dns.error = e.message;
   }
 
-  // RDAP check
+  // RDAP check — follow redirects, handle 302→404 chains
   const base = RDAP_SERVERS[tld];
   if (base) {
     try {
-      const r = await fetch(base + domain);
+      const r = await fetch(base + domain, { redirect: 'follow' });
       if (r.status === 200) {
         const data: any = await r.json();
         const events = data.events || [];
         const expires = events.find((e: any) => e.eventAction === 'expiration');
         const status = data.status || [];
-        // Extract registrar from links or nameservers
         const registrar = data.ldhName ? (status[0] || 'registered') : 'unknown';
         result.registration = {
           status: 'taken',
@@ -69,13 +79,16 @@ export async function verifyDomain(domain: string): Promise<VerifyResult> {
       } else if (r.status === 404) {
         result.registration = { status: 'available', confidence: 'high' };
       }
+      // Other statuses (429, 500, etc.) — keep whatever DNS said
     } catch (e: any) {
       result.registration.error = e.message;
     }
   } else {
-    // No RDAP server — fall back to DNS heuristic
-    result.registration.status = result.dns.has_records ? 'taken' : 'unknown';
-    result.registration.confidence = result.dns.has_records ? 'medium' : 'low';
+    // No RDAP server — trust DNS heuristic
+    if (result.registration.status !== 'available') {
+      result.registration.status = result.dns.has_records ? 'taken' : 'unknown';
+      result.registration.confidence = result.dns.has_records ? 'medium' : 'low';
+    }
   }
 
   return result;
@@ -91,6 +104,7 @@ interface HandleResult {
   confidence: string;
   note?: string;
   rule?: string;
+  suggestions?: HandleSuggestion[];
 }
 
 const HANDLE_CHECKS: Array<{
@@ -170,6 +184,80 @@ async function checkOneHandle(name: string, check: typeof HANDLE_CHECKS[0]): Pro
 
 export async function checkHandles(name: string): Promise<HandleResult[]> {
   return Promise.all(HANDLE_CHECKS.map(c => checkOneHandle(name, c)));
+}
+
+// === HANDLE SUGGESTIONS ===
+
+const SUFFIXES = ['official', 'app', 'hq', 'team', 'io', 'dev', 'xyz', 'co', 'lab', 'hub', 'site', 'online', 'get', 'try', 'use', 'go', 'the', 'my', 'we'];
+const PREFIXES = ['get', 'try', 'use', 'go', 'the', 'my', 'we', 'hey', 'oh'];
+
+export interface HandleSuggestion {
+  handle: string;
+  source: string; // e.g. "suffix:official", "prefix:get", "domain:tld"
+}
+
+export function suggestHandles(name: string, takenHandles: string[], availableDomains: string[]): HandleSuggestion[] {
+  const taken = new Set(takenHandles.map(h => h.toLowerCase()));
+  const suggestions: HandleSuggestion[] = [];
+  const seen = new Set<string>();
+
+  function add(handle: string, source: string) {
+    const h = handle.toLowerCase();
+    if (h === name || taken.has(h) || seen.has(h) || h.length > 30) return;
+    seen.add(h);
+    suggestions.push({ handle: h, source });
+  }
+
+  // Suffix variations: pogtownofficial, pogtownhq, pogtownapp
+  for (const suffix of SUFFIXES) {
+    add(`${name}${suffix}`, `suffix:${suffix}`);
+  }
+
+  // Prefix variations: getpogtown, thepogtown
+  for (const prefix of PREFIXES) {
+    add(`${prefix}${name}`, `prefix:${prefix}`);
+  }
+
+  // Domain-based: if pogtown.io is available, suggest "pogtownio" as handle
+  for (const domain of availableDomains) {
+    const tld = domain.split('.').pop() || '';
+    if (tld && tld !== 'com' && tld.length <= 6) {
+      add(`${name}${tld}`, `domain:${tld}`);
+    }
+  }
+
+  // Dot variations: pog.town (if name has common splits)
+  // Hyphen variations if name is compound
+
+  return suggestions.slice(0, 15);
+}
+
+export interface SocialReport {
+  name: string;
+  handles: (HandleResult & { suggestions?: HandleSuggestion[] })[];
+  taken: string[];
+  available: string[];
+  unknown: string[];
+  allSuggestions: HandleSuggestion[];
+}
+
+export async function fullSocialCheck(name: string): Promise<SocialReport> {
+  const handles = await checkHandles(name);
+  const taken = handles.filter(h => h.status === 'taken').map(h => h.platform);
+  const available = handles.filter(h => h.status === 'available').map(h => h.platform);
+  const unknown = handles.filter(h => h.status === 'unknown').map(h => h.platform);
+
+  // Generate suggestions for taken platforms
+  const allSuggestions = suggestHandles(name, taken, []);
+
+  // Attach top suggestions to each taken handle
+  for (const h of handles) {
+    if (h.status === 'taken') {
+      h.suggestions = allSuggestions.slice(0, 3);
+    }
+  }
+
+  return { name, handles, taken, available, unknown, allSuggestions };
 }
 
 // === UNIFIED AVAILABILITY CHECK ===

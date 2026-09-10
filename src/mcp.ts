@@ -1,5 +1,5 @@
 import type { Env } from "./do";
-import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains } from "./names";
+import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains, fullSocialCheck } from "./names";
 
 // MCP primary interface: list/search/read/draft/reply/send/archive + ask.
 // Drafts are default; SEND requires explicit permission + human confirm.
@@ -8,7 +8,7 @@ const TOOLS = [
   "email.list_domains", "email.list_mailboxes", "email.inbox", "email.search",
   "email.read", "email.thread", "email.draft", "email.reply", "email.send",
   "email.archive", "email.label", "email.needs_reply", "email.ask",
-  "name.check", "name.verify_domain", "name.check_handles", "name.search",
+  "name.check", "name.verify_domain", "name.check_handles", "name.search", "name.social",
   "name.cf_check", "name.cf_purchase", "name.wire_email",
   "name.phone_search", "name.phone_list", "name.phone_purchase", "name.read_sms",
 ];
@@ -116,6 +116,12 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       const name = String(args.name ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
       if (!name) return Response.json({ error: "name required" }, { status: 400 });
       const report = await searchDomains(name);
+      return Response.json(report);
+    }
+    case "name.social": {
+      const name = String(args.name ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+      if (!name) return Response.json({ error: "name required" }, { status: 400 });
+      const report = await fullSocialCheck(name);
       return Response.json(report);
     }
     case "name.cf_check": {
