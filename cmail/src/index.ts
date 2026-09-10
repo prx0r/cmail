@@ -136,7 +136,7 @@ export default {
       return Response.json({ ok: true, draft_id: id, status: "queued" });
     }
     if (url.pathname === "/api/drafts") {
-      const rows = await env.DB.prepare("SELECT id,to_address,subject,status,created_at FROM drafts ORDER BY created_at DESC LIMIT 100").all();
+      const rows = await env.DB.prepare("SELECT id,to_address,subject,body,status,created_at FROM drafts ORDER BY created_at DESC LIMIT 100").all();
       return Response.json(rows.results);
     }
     // ---- test ingest: same pipeline, synthetic message. Guarded by secret. ----
@@ -159,7 +159,9 @@ export default {
 };
 
 const UI = `<!doctype html><html><head><meta charset=utf-8><title>cmail</title>
-<style>body{font-family:system-ui;max-width:720px;margin:2em auto}li{margin:.4em 0}</style></head><body>
+<style>body{font-family:system-ui;max-width:720px;margin:2em auto}li{margin:.4em 0}.q{border:1px solid #ccc;padding:.5em;margin:.5em 0}.q pre{white-space:pre-wrap;font-size:.85em}</style></head><body>
 <h1>cmail — needs me</h1><div id=s></div><ul id=l></ul>
+<h2>drafts (queued — send on migration day)</h2><div id=d></div>
 <script>fetch('/api/inbox?needs_reply=1').then(r=>r.json()).then(a=>{l.innerHTML=a.map(m=>'<li><b>'+m.subject+'</b> — '+m.sender+' <i>'+m.summary+'</i></li>').join('')||'<li>all clear</li>'});
-fetch('/api/stats').then(r=>r.json()).then(s=>{document.getElementById('s').textContent='needs me: '+s.needs_me+' · total: '+s.total})</script>`;
+fetch('/api/stats').then(r=>r.json()).then(s=>{document.getElementById('s').textContent='needs me: '+s.needs_me+' · total: '+s.total});
+fetch('/api/drafts').then(r=>r.json()).then(a=>{document.getElementById('d').innerHTML=a.map(d=>'<div class=q><b>to '+d.to_address+'</b> — '+d.subject+' <i>('+d.status+')</i><pre>'+d.body+'</pre></div>').join('')||'<i>no drafts</i>'});</script>`;

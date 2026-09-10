@@ -388,6 +388,31 @@ def renewals(warn_days: int = 30, db: Session = Depends(_db)):
     return {"domains": out, "alerts": sum(1 for x in out if x["alert"])}
 
 
+@router.post("/renewals/sync")
+def renewals_sync(warn_days: int = 30, db: Session = Depends(_db)):
+    """Turn expiring domains into HumanActions (dedupe by key). Call daily;
+    the desk shows them with everything else — no separate dashboard."""
+    from .models import HumanAction, Project
+
+    data = renewals(warn_days, db)
+    p = db.scalar(select(Project).order_by(Project.id))
+    made = 0
+    for d in data["domains"]:
+        if not d["alert"]:
+            continue
+        key = f"renewal:{d['domain']}"
+        if db.scalar(select(HumanAction).where(HumanAction.project_id == p.id,
+                                               HumanAction.resource_key == key)) is None:
+            db.add(HumanAction(project_id=p.id, resource_key=key,
+                               title=f"🔁 {d['domain']} expires in {d['days_left']}d",
+                               instructions=f"Renew {d['domain']} (expires {d['expires']}). "
+                                            f"Budget-check against kernels, then renew at registrar.",
+                               priority=60))
+            made += 1
+    db.commit()
+    return {"ok": True, "alerts": data["alerts"], "actions_created": made}
+
+
 @router.get("/deals")
 def list_deals(status: str | None = None, db: Session = Depends(_db)):
     q = select(DomainDeal).order_by(DomainDeal.id.desc()).limit(50)
