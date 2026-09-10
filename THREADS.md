@@ -4,9 +4,9 @@
 
 | Pri | Thread | Why first | Definition of done |
 |---|---|---|---|
-| A1 | **Scheduled reconcile sweep** (was T9) | makes every morning start warm; trivial build | timer hits `/reconcile` + renewals/sync 06:00 daily, desk shows fresh states |
+| A1 | **Scheduled reconcile sweep** | DONE live (06:00 timer, verified 200s) |
 | A2 | **Push-flow script** (was T17) | kills the copy-divergence risk (T16) before it bites | one command: re-sync `/tmp/cmail-repo` ← `/root`, secret-scan, commit, push |
-| A3 | **Unified MCP, read-only** (was T13) | unlocks agent consumers; no spend risk | `name.*`/`job.*`/`email.*` list/get/search tools live behind existing tiers |
+| A3 | **Unified MCP, read-only** | DONE live (`POST /mcp`, 6 tools, verified) |
 | A4 | **IG lead test harness** (part of T10) | proves the bridge without Meta tokens | fixture payloads → jobs, continuity asserted in suite |
 | A5 | **Secret rotation runbook + TEST_INGEST_SECRET rotate** (T18, T8-support) | hygiene with teeth | new secret in worker + steve env, old revoked, verified live |
 | A6 | **Second pilot dry-run** (supports T11) | de-risks the real onboarding | full SKILL.md pass against fixture business, gaps logged |

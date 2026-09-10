@@ -23,6 +23,7 @@ from .email_routes import router as email_router
 from .tradie_routes import router as tradie_router
 from .backend_routes import router as backend_router
 from .domain_routes import router as domain_router
+from .mcp_routes import router as mcp_router
 from .scheduler import start_scheduler, stop_scheduler
 
 BASE = Path(__file__).resolve().parent
@@ -45,6 +46,7 @@ app.include_router(email_router)
 app.include_router(tradie_router)
 app.include_router(backend_router)
 app.include_router(domain_router)
+app.include_router(mcp_router)
 
 
 def get_db():
