@@ -708,15 +708,15 @@ function getAnalytics() {
 // Patterns follow Sherlock's URL-probing model (MIT); table is our own.
 
 const HANDLE_CHECKS = [
-  { platform: 'github', label: 'GitHub', url: u => 'https://api.github.com/users/' + u, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
+  { platform: 'github', label: 'GitHub', url: u => 'https://api.github.com/users/' + u, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens', notfoundNote: 'no public user; EMU-hidden accounts also 404 — use signup flow to confirm' },
   { platform: 'x', label: 'X', url: u => 'https://x.com/' + u, freeStatus: [404], takenMarkers: u => ['This account doesn&rsquo;t exist', 'this account doesn&#39;t exist'], conf: 'medium', rule: '≤15 chars, letters/numbers/_', useProbe: true },
   { platform: 'youtube', label: 'YouTube', url: u => 'https://www.youtube.com/@' + u, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars', useProbe: true, api: 'youtube' },
   { platform: 'instagram', label: 'Instagram', url: u => 'https://www.instagram.com/' + u + '/', takenMarkers: u => [new RegExp('"username"\\s*:\\s*"' + escRx(u) + '"', 'i')], freeMarkers: u => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'medium', rule: '≤30 chars, lowercase/numbers/./_', requireName: true },
-  { platform: 'tiktok', label: 'TikTok', url: u => 'https://www.tiktok.com/oembed?url=' + encodeURIComponent('https://www.tiktok.com/@' + u), takenMarkers: u => ['"author_name"'], freeMarkers: u => ['something went wrong'], conf: 'medium', rule: '2–24 chars, lowercase/numbers/./_', useProbe: true },
+  { platform: 'tiktok', label: 'TikTok', url: u => 'https://www.tiktok.com/oembed?url=' + encodeURIComponent('https://www.tiktok.com/@' + u), oembed: true, conf: 'medium', rule: '2–24 chars, lowercase/numbers/./_' },
   { platform: 'twitch', label: 'Twitch', url: u => 'https://www.twitch.tv/' + u.toLowerCase(), takenMarkers: u => ['"login":"' + u.toLowerCase() + '"', 'isLiveBroadcast'], freeMarkers: u => ['time machine'], conf: 'medium', rule: '4–25 chars, alphanumerics/_' },
-  { platform: 'npm', label: 'npm', url: u => 'https://registry.npmjs.org/' + encodeURIComponent(u), take: [200], free: [404], conf: 'high', rule: 'lowercase, no spaces' },
-  { platform: 'pypi', label: 'PyPI', url: u => 'https://pypi.org/pypi/' + encodeURIComponent(u) + '/json', take: [200], free: [404], conf: 'high', rule: 'letters/numbers/-/_/.' },
-  { platform: 'crates', label: 'crates.io', url: u => 'https://crates.io/api/v1/crates/' + encodeURIComponent(u), take: [200], free: [404], conf: 'high', rule: 'lowercase alnum/-/_' },
+  { platform: 'npm_package', label: 'npm package', url: u => 'https://registry.npmjs.org/' + encodeURIComponent(u.toLowerCase()) , take: [200], free: [404], conf: 'high', rule: 'lowercase, URL-safe, policy-checked at publish', notfoundNote: 'package-name collision only; policy/similarity still apply' },
+  { platform: 'pypi_project', label: 'PyPI project', url: u => 'https://pypi.org/pypi/' + encodeURIComponent(u.toLowerCase().replace(/[-_.]+/g, '-')) + '/json', take: [200], free: [404], conf: 'high', rule: 'PEP-normalized; stdlib/similarity blocks possible', notfoundNote: 'PyPI docs: names can be unavailable with no visible project' },
+  { platform: 'crates', label: 'crates.io', sparse: true, conf: 'high', rule: 'lowercase alnum/-/_' },
 ];
 
 const HANDLE_UNKNOWN = [
@@ -766,8 +766,27 @@ async function cachePut(env, key, val) {
 // Sherlock-style profile probing: status codes lie (IG/TikTok return 200 for
 // free handles), but page CONTENT differs. taken markers = profile data present;
 // free markers = "not available" page. Ambiguous → unknown, never a guess.
+async function checkOembed(def, name, url) {
+  // Structural proof per TikTok docs: type==rich + author_url username match.
+  // Anything else (incl. "Something went wrong") is NOT a verdict → unknown,
+  // except the documented missing-profile shape which yields not_found.
+  try {
+    const r = await fetch(url, { redirect: 'manual', headers: authHeaders(env, def.platform) });
+    let d = null;
+    try { d = await r.json(); } catch (e) { /* non-JSON */ }
+    if (r.ok && d && d.type === 'rich' && typeof d.author_url === 'string' &&
+        d.author_url.toLowerCase().endsWith('/@' + name.toLowerCase()))
+      return { platform: def.platform, label: def.label, status: 'taken', confidence: 'high', source: 'oembed-structural', url };
+    if (d && d.code === 400 && /something went wrong/i.test(d.message || ''))
+      return { platform: def.platform, label: def.label, status: 'not_found', confidence: 'medium', source: 'oembed-missing', note: 'no public profile; reactivation holds possible', url };
+    return { platform: def.platform, label: def.label, status: 'unknown', reason: 'oembed HTTP ' + r.status, url };
+  } catch (e) {
+    return { platform: def.platform, label: def.label, status: 'unknown', reason: 'fetch failed', url };
+  }
+}
 async function probeProfile(def, name, env) {
   const url = def.url(name);
+  if (def.oembed) return checkOembed(def, name, url);
   const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
   if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url };
   let html = '';
@@ -851,13 +870,33 @@ const HANDLE_RULES = {
   instagram: u => /^[a-z0-9._]{1,30}$/.test(u) ? null : 'Instagram: ≤30 chars, lowercase/numbers/./_',
 };
 
+function sparseIndexUrl(name) {
+  // Official crates.io sparse index: static files, no auth. Per Cargo docs.
+  const n = name.toLowerCase();
+  if (n.length === 1) return 'https://index.crates.io/1/' + n;
+  if (n.length === 2) return 'https://index.crates.io/2/' + n;
+  if (n.length === 3) return 'https://index.crates.io/3/' + n[0] + '/' + n;
+  return 'https://index.crates.io/' + n.slice(0, 2) + '/' + n.slice(2, 4) + '/' + n;
+}
+async function checkSparseCrate(name) {
+  const url = sparseIndexUrl(name);
+  try {
+    const r = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'domainnamechecker/1.0' } });
+    if (r.status === 200) return { platform: 'crates', label: 'crates.io', status: 'taken', confidence: 'high', source: 'sparse-index', url };
+    if (r.status === 404) return { platform: 'crates', label: 'crates.io', status: 'not_found', confidence: 'high', source: 'sparse-index', note: 'no index entry; registry policy could still refuse', url };
+    return { platform: 'crates', label: 'crates.io', status: 'unknown', reason: 'index HTTP ' + r.status, url };
+  } catch (e) {
+    return { platform: 'crates', label: 'crates.io', status: 'unknown', reason: 'fetch failed', url };
+  }
+}
 async function checkHandle(def, name, env) {
+  if (def.sparse) return checkSparseCrate(name);
   if (def.useProbe || def.takenMarkers || def.freeMarkers) return probeProfile(def, name, env);
   const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
   if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url: def.url(name) };
   try {
     const r = await fetch(def.url(name), { method: 'GET', redirect: 'manual', headers: { 'User-Agent': 'domainnamechecker/3.3' } });
-    if (def.free.includes(r.status)) return { platform: def.platform, label: def.label, status: 'available', confidence: def.conf, source: 'live-' + r.status, url: def.url(name) };
+    if (def.free.includes(r.status)) return { platform: def.platform, label: def.label, status: 'not_found', confidence: def.conf, source: 'live-' + r.status, note: def.notfoundNote || 'no public object; claimability unproved', url: def.url(name) };
     if (def.take.includes(r.status)) return { platform: def.platform, label: def.label, status: 'taken', confidence: def.conf, source: 'live-' + r.status, url: def.url(name) };
     return { platform: def.platform, label: def.label, status: 'unknown', reason: 'HTTP ' + r.status, url: def.url(name) };
   } catch (e) {
@@ -897,24 +936,60 @@ async function checkRedditAPI(name, env) {
   } catch (e) { return null; }
 }
 
-async function checkEns(name) {
-  // web3 identity: ENS via public resolver. example.eth only.
+async function checkEns(name, env) {
+  // Correct primitive: ETHRegistrarController.available(name) on-chain.
+  // Resolver records answer a different question (record set?); a registered
+  // name with no ETH record would false-FREE. RPC list configurable via env.
   if (!/^[a-z0-9-]+\.eth$/i.test(name)) return { platform: 'ens', label: 'ENS', status: 'invalid', reason: 'ENS names look like name.eth' };
+  const label = name.split('.')[0].toLowerCase();
+  const onchain = await checkEnsOnchain(label, env);
+  if (onchain) return onchain;
   try {
     const r = await fetch('https://api.ensideas.com/ens/resolve/' + encodeURIComponent(name.toLowerCase()), { headers: { 'User-Agent': 'domainnamechecker/3.3' } });
     if (!r.ok) return { platform: 'ens', label: 'ENS', status: 'unknown', reason: 'resolver HTTP ' + r.status };
     const d = await r.json();
     if (d && d.address && d.address !== '0x0000000000000000000000000000000000000000')
       return { platform: 'ens', label: 'ENS', status: 'taken', confidence: 'high', source: 'ensideas', address: d.address };
-    return { platform: 'ens', label: 'ENS', status: 'available', confidence: 'medium', source: 'ensideas' };
+    return { platform: 'ens', label: 'ENS', status: 'not_found', confidence: 'medium', source: 'ensideas', note: 'no record set; registered-without-record possible — verify on-chain' };
   } catch (e) {
     return { platform: 'ens', label: 'ENS', status: 'unknown', reason: 'resolver unreachable' };
   }
 }
 
+async function checkEnsOnchain(label, env) {
+  // available(string) selector aeb8ce9b on ETHRegistrarController. Returns
+  // null when no RPC reachable (our egress is widely 403'd) — caller falls back.
+  const rpcs = (env && env.ETH_RPC_URLS ? String(env.ETH_RPC_URLS).split(',') : [
+    'https://rpc.mevblocker.io', 'https://eth.llamarpc.com', 'https://ethereum-rpc.publicnode.com',
+  ]).map(s => s.trim()).filter(Boolean);
+  const enc = (s) => {
+    const bytes = new TextEncoder().encode(s);
+    const words = ['20'.padStart(64, '0'), bytes.length.toString(16).padStart(64, '0')];
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+    while (hex.length % 64) hex += '00';
+    return '0xaeb8ce9b' + words.join('') + hex;
+  };
+  for (const rpc of rpcs) {
+    try {
+      const r = await fetch(rpc, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call',
+          params: [{ to: '0x283Af0B28c62C092C9727F1Ee09c02CA2624b2C5', data: enc(label) }, 'latest'] }) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (d.error || typeof d.result !== 'string') continue;
+      const avail = BigInt(d.result) === 1n;
+      return avail
+        ? { platform: 'ens', label: 'ENS', status: 'available', confidence: 'high', source: 'onchain-registrar' }
+        : { platform: 'ens', label: 'ENS', status: 'taken', confidence: 'high', source: 'onchain-registrar' };
+    } catch (e) { continue; }
+  }
+  return null;
+}
+
 async function checkHandles(name, env) {
   const clean = String(name || '').trim().replace(/^@/, '');
-  const cacheKey = 'handles:' + clean.toLowerCase();
+  const cacheKey = 'handles:v2:' + clean.toLowerCase();
   const hit = await cacheGet(env, cacheKey);
   if (hit && hit.handles) return hit;
   const live = await Promise.all(HANDLE_CHECKS.map(d => checkHandle(d, clean, env)));
@@ -940,7 +1015,7 @@ async function checkHandles(name, env) {
       if (i >= 0) live[i] = { platform: 'youtube', label: 'YouTube', ...yt, url: 'https://www.youtube.com/@' + clean };
     }
   } catch (e) { /* probe result stands */ }
-  const ens = clean.includes('.') ? null : await checkEns(clean + '.eth');
+  const ens = clean.includes('.') ? null : await checkEns(clean + '.eth', env);
   const apps = await checkAppStores(clean);
   const unknown = HANDLE_UNKNOWN.map(u => {
     const ruleBreak = (HANDLE_RULES[u.platform] || (() => null))(clean);
@@ -950,7 +1025,8 @@ async function checkHandles(name, env) {
   });
   const handles = [...live, ...(ens ? [ens] : []), ...apps, ...unknown];
   const free = handles.filter(h => h.status === 'available').length;
-  const out = { name: clean, handles, summary: { checked: handles.length, available: free } };
+  const unclaimed = handles.filter(h => h.status === 'not_found').length;
+  const out = { name: clean, handles, summary: { checked: handles.length, available: free, not_found: unclaimed } };
   await cachePut(env, cacheKey, out);
   return out;
 }
@@ -970,6 +1046,7 @@ async function claimKit(domain, handleName) {
       'Email Routing → cmail worker → hello@, support@ live',
       'steve business + kernel → jobs/quotes/schedule',
       ...handles.handles.filter(h => h.status === 'available' && ['github', 'x', 'youtube'].includes(h.platform)).map(h => 'claim @' + handles.name + ' on ' + h.label),
+      ...handles.handles.filter(h => h.status === 'not_found').map(h => 'verify then claim @' + handles.name + ' on ' + h.label + ' (' + (h.note || 'no public object') + ')'),
       ...handles.handles.filter(h => h.status === 'unknown').map(h => 'check @' + handles.name + ' on ' + h.label + ' manually (' + h.reason + ')'),
     ],
     steve_intake: { mailbox_hint: 'hello@' + domain, summary: 'claim kit for ' + domain },
@@ -1330,7 +1407,7 @@ const LANDING_PAGE = `<!DOCTYPE html>
         st.textContent=d.summary.available+' of '+d.summary.checked+' free for "'+d.name+'"';
         let h='<div class="section"><div class="section-label">handles · packages · web3</div><table>';
         for(const x of d.handles){
-          const badge=x.status==='available'?'<span class="avail">free</span>':x.status==='taken'?'<span class="taken">taken</span>':x.status==='invalid'?'<span class="taken">n/a</span>':'<span style="color:#b45309;font-size:.75rem">manual check</span>';
+          const badge=x.status==='available'?'<span class="avail">free</span>':x.status==='taken'?'<span class="taken">taken</span>':x.status==='invalid'?'<span class="taken">n/a</span>':x.status==='not_found'?'<span style="color:#166534;font-size:.75rem">unclaimed?</span>':'<span style="color:#b45309;font-size:.75rem">manual check</span>';
           const note=x.status==='unknown'||x.status==='invalid'?'<div style="font-size:.625rem;color:#999">'+(x.reason||'')+'</div>':(x.confidence?'<div style="font-size:.625rem;color:#999">'+x.confidence+' confidence · '+x.source+'</div>':'');
           h+='<tr class="row"><td>'+x.label+'</td><td>'+badge+note+'</td><td style="text-align:right"><a class="buy" target="_blank" href="'+x.url+'">open →</a></td></tr>';
         }

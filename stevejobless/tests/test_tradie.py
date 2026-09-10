@@ -96,7 +96,9 @@ def test_whatsapp_stubs(client):
 def test_social_claim_kit_live_checker(client):
     r = client.get("/api/tradie/sparky/social/claim-kit?name=sparkytest12345").json()
     assert "handles" in r and "claim_order" in r
-    assert any(s["platform"] == "github" for s in r["claim_order"])
+    actions = {s["action"] for s in r["claim_order"]}
+    assert actions <= {"claim", "check manually"}
+    assert any(s["platform"] == "github" for s in r["handles"])
 
 
 def test_social_verify_records_resolving_handle(client):
