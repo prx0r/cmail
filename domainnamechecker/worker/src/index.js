@@ -710,7 +710,7 @@ function getAnalytics() {
 const HANDLE_CHECKS = [
   { platform: 'github', label: 'GitHub', url: u => 'https://api.github.com/users/' + u, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
   { platform: 'x', label: 'X', url: u => 'https://x.com/' + u, freeStatus: [404], takenMarkers: u => ['This account doesn&rsquo;t exist', 'this account doesn&#39;t exist'], conf: 'medium', rule: '≤15 chars, letters/numbers/_', useProbe: true },
-  { platform: 'youtube', label: 'YouTube', url: u => 'https://www.youtube.com/@' + u, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars', useProbe: true },
+  { platform: 'youtube', label: 'YouTube', url: u => 'https://www.youtube.com/@' + u, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars', useProbe: true, api: 'youtube' },
   { platform: 'instagram', label: 'Instagram', url: u => 'https://www.instagram.com/' + u + '/', takenMarkers: u => [new RegExp('"username"\\s*:\\s*"' + escRx(u) + '"', 'i')], freeMarkers: u => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'medium', rule: '≤30 chars, lowercase/numbers/./_', requireName: true },
   { platform: 'tiktok', label: 'TikTok', url: u => 'https://www.tiktok.com/oembed?url=' + encodeURIComponent('https://www.tiktok.com/@' + u), takenMarkers: u => ['"author_name"'], freeMarkers: u => ['something went wrong'], conf: 'medium', rule: '2–24 chars, lowercase/numbers/./_', useProbe: true },
   { platform: 'twitch', label: 'Twitch', url: u => 'https://www.twitch.tv/' + u.toLowerCase(), takenMarkers: u => ['"login":"' + u.toLowerCase() + '"', 'isLiveBroadcast'], freeMarkers: u => ['time machine'], conf: 'medium', rule: '4–25 chars, alphanumerics/_' },
@@ -756,6 +756,23 @@ async function probeProfile(def, name) {
   }
   if (hasFree) return { platform: def.platform, label: def.label, status: 'available', confidence: def.conf || 'medium', source: 'content-match', url };
   return { platform: def.platform, label: def.label, status: 'unknown', reason: 'no decisive markers (login wall?)', url };
+}
+
+async function checkYouTubeAPI(name, env) {
+  // Deterministic: Data API channels.list?forHandle. Needs YT_API_KEY secret.
+  if (!env || !env.YT_API_KEY) return null;
+  try {
+    const r = await fetch('https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=' + encodeURIComponent(name) + '&key=' + env.YT_API_KEY);
+    if (r.status === 403 || r.status === 429) return { status: 'unknown', reason: 'quota' };
+    if (!r.ok) return null;
+    const d = await r.json();
+    const n = ((d.pageInfo || {}).totalResults) || 0;
+    return n > 0
+      ? { status: 'taken', confidence: 'high', source: 'youtube-api' }
+      : { status: 'available', confidence: 'high', source: 'youtube-api' };
+  } catch (e) {
+    return null;
+  }
 }
 
 async function checkAppStores(name) {
@@ -826,9 +843,17 @@ async function checkEns(name) {
   }
 }
 
-async function checkHandles(name) {
+async function checkHandles(name, env) {
   const clean = String(name || '').trim().replace(/^@/, '');
   const live = await Promise.all(HANDLE_CHECKS.map(d => checkHandle(d, clean)));
+  // YouTube Data API overrides the probe when keyed (deterministic > sniff).
+  try {
+    const yt = await checkYouTubeAPI(clean, env);
+    if (yt && yt.status !== 'unknown') {
+      const i = live.findIndex(h => h.platform === 'youtube');
+      if (i >= 0) live[i] = { platform: 'youtube', label: 'YouTube', ...yt, url: 'https://www.youtube.com/@' + clean };
+    }
+  } catch (e) { /* probe result stands */ }
   const ens = clean.includes('.') ? null : await checkEns(clean + '.eth');
   const apps = await checkAppStores(clean);
   const unknown = HANDLE_UNKNOWN.map(u => {
@@ -846,7 +871,7 @@ async function claimKit(domain, handleName) {
   // One-click buy+setup plan. No purchases happen here — spend needs human confirm.
   const v = await verifyDomain(domain);
   const pr = await compareRegistrars(domain);
-  const handles = await checkHandles(handleName || domain.split('.')[0]);
+  const handles = await checkHandles(handleName || domain.split('.')[0], {});
   const best = pr.quotes && pr.quotes.length ? pr.quotes.reduce((a, b) => (a.registration <= b.registration ? a : b)) : null;
   return {
     domain: { name: domain, status: v.registration.status, confidence: v.registration.confidence, best_price: best ? { registrar: best.registrar_name, first_year: best.registration, buy_url: best.buy_url } : null },
@@ -865,7 +890,7 @@ async function claimKit(domain, handleName) {
 
 // === MCP HANDLER ===
 
-async function handleMcp(body) {
+async function handleMcp(body, env) {
   const { method, params, id } = body;
   
   if (method === 'tools/list') {
@@ -925,7 +950,7 @@ async function handleMcp(body) {
     }
 
     if (name === 'check_handles') {
-      const result = await checkHandles(args.name);
+      const result = await checkHandles(args.name, env);
       return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] } };
     }
 
@@ -1235,7 +1260,7 @@ const LANDING_PAGE = `<!DOCTYPE html>
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
 
-async function handleRequest(request) {
+async function handleRequest(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   
@@ -1266,7 +1291,7 @@ async function handleRequest(request) {
   if (path.startsWith('/api/handles/') && request.method === 'GET') {
     const name = decodeURIComponent(path.split('/api/handles/')[1]);
     if (!name || name.length > 60) return Response.json({ error: 'name required (max 60 chars)' }, { status: 400, headers: corsHeaders });
-    const result = await checkHandles(name);
+    const result = await checkHandles(name, env);
     return Response.json(result, { headers: corsHeaders });
   }
   if (path === '/api/mine' && request.method === 'POST') {    const { concept, intent, tlds, pack } = await request.json();
@@ -1366,7 +1391,7 @@ async function handleRequest(request) {
   // MCP
   if (path === '/mcp' && request.method === 'POST') {
     const body = await request.json();
-    return Response.json(await handleMcp(body), { headers: corsHeaders });
+    return Response.json(await handleMcp(body, env), { headers: corsHeaders });
   }
   
   // Streaming search endpoint — SSE
@@ -1477,4 +1502,8 @@ async function handleRequest(request) {
   return Response.json({ error: { code: 'NOT_FOUND', message: 'Not found' } }, { status: 404, headers: corsHeaders });
 }
 
-addEventListener('fetch', event => { event.respondWith(handleRequest(event.request)); });
+export default {
+  async fetch(request, env) {
+    return handleRequest(request, env || {});
+  }
+};
