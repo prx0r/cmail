@@ -13,8 +13,15 @@ const TOOLS = [
   "name.phone_search", "name.phone_list", "name.phone_purchase", "name.read_sms",
 ];
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 export async function handleMcp(req: Request, env: Env): Promise<Response> {
-  if (req.method === "GET") return Response.json({ tools: TOOLS });
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  if (req.method === "GET") return Response.json({ tools: TOOLS }, { headers: CORS });
   const body: any = await req.json().catch(() => ({}));
   const { tool, args = {}, actor = "owner" } = body;
   const perms = await getPerms(env, actor);

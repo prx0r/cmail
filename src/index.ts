@@ -94,7 +94,12 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     // MCP is the primary agent interface
-    if (url.pathname === "/mcp") return handleMcp(req, env);
+    if (url.pathname === "/mcp") {
+      if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" } });
+      const resp = await handleMcp(req, env);
+      resp.headers.set("Access-Control-Allow-Origin", "*");
+      return resp;
+    }
     if (url.pathname === "/api/inbox") {
       const needs = url.searchParams.get("needs_reply");
       const rows = needs
