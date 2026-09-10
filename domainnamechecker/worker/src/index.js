@@ -708,21 +708,86 @@ function getAnalytics() {
 // Patterns follow Sherlock's URL-probing model (MIT); table is our own.
 
 const HANDLE_CHECKS = [
-  { platform: 'github', label: 'GitHub', url: u => 'https://github.com/' + u, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
-  { platform: 'x', label: 'X', url: u => 'https://x.com/' + u, take: [200], free: [404], conf: 'medium', rule: '≤15 chars, letters/numbers/_' },
-  { platform: 'youtube', label: 'YouTube', url: u => 'https://www.youtube.com/@' + u, take: [200], free: [404], conf: 'medium', rule: '3–30 chars' },
+  { platform: 'github', label: 'GitHub', url: u => 'https://api.github.com/users/' + u, take: [200], free: [404], conf: 'high', rule: '≤39 chars, alnum + hyphens' },
+  { platform: 'x', label: 'X', url: u => 'https://x.com/' + u, freeStatus: [404], takenMarkers: u => ['This account doesn&rsquo;t exist', 'this account doesn&#39;t exist'], conf: 'medium', rule: '≤15 chars, letters/numbers/_', useProbe: true },
+  { platform: 'youtube', label: 'YouTube', url: u => 'https://www.youtube.com/@' + u, freeStatus: [404], takenMarkers: u => ['"channelId":"UC', '"browseId":"UC'], conf: 'medium', rule: '3–30 chars', useProbe: true },
+  { platform: 'instagram', label: 'Instagram', url: u => 'https://www.instagram.com/' + u + '/', takenMarkers: u => [new RegExp('"username"\\s*:\\s*"' + escRx(u) + '"', 'i')], freeMarkers: u => ["sorry, this page isn't available", 'the link you followed may be broken'], conf: 'medium', rule: '≤30 chars, lowercase/numbers/./_', requireName: true },
+  { platform: 'tiktok', label: 'TikTok', url: u => 'https://www.tiktok.com/oembed?url=' + encodeURIComponent('https://www.tiktok.com/@' + u), takenMarkers: u => ['"author_name"'], freeMarkers: u => ['something went wrong'], conf: 'medium', rule: '2–24 chars, lowercase/numbers/./_', useProbe: true },
+  { platform: 'twitch', label: 'Twitch', url: u => 'https://www.twitch.tv/' + u.toLowerCase(), takenMarkers: u => ['"login":"' + u.toLowerCase() + '"', 'isLiveBroadcast'], freeMarkers: u => ['time machine'], conf: 'medium', rule: '4–25 chars, alphanumerics/_' },
   { platform: 'npm', label: 'npm', url: u => 'https://registry.npmjs.org/' + encodeURIComponent(u), take: [200], free: [404], conf: 'high', rule: 'lowercase, no spaces' },
   { platform: 'pypi', label: 'PyPI', url: u => 'https://pypi.org/pypi/' + encodeURIComponent(u) + '/json', take: [200], free: [404], conf: 'high', rule: 'letters/numbers/-/_/.' },
   { platform: 'crates', label: 'crates.io', url: u => 'https://crates.io/api/v1/crates/' + encodeURIComponent(u), take: [200], free: [404], conf: 'high', rule: 'lowercase alnum/-/_' },
 ];
 
 const HANDLE_UNKNOWN = [
-  { platform: 'instagram', label: 'Instagram', reason: 'returns 200 for free handles — cannot observe server-side' },
-  { platform: 'tiktok', label: 'TikTok', reason: 'returns 200 for free handles — cannot observe server-side' },
-  { platform: 'twitch', label: 'Twitch', reason: 'returns 200 for free handles — cannot observe server-side' },
   { platform: 'reddit', label: 'Reddit', reason: '403 to server callers regardless of handle' },
   { platform: 'linkedin', label: 'LinkedIn', reason: 'blocks server-side requests' },
 ];
+
+function escRx(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Sherlock-style profile probing: status codes lie (IG/TikTok return 200 for
+// free handles), but page CONTENT differs. taken markers = profile data present;
+// free markers = "not available" page. Ambiguous → unknown, never a guess.
+async function probeProfile(def, name) {
+  const url = def.url(name);
+  const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
+  if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url };
+  let html = '';
+  try {
+    const r = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' } });
+    if (def.freeStatus && def.freeStatus.includes(r.status))
+      return { platform: def.platform, label: def.label, status: 'available', confidence: 'high', source: 'live-' + r.status, url };
+    html = await r.text();
+  } catch (e) {
+    return { platform: def.platform, label: def.label, status: 'unknown', reason: 'fetch failed / rate-limited', url };
+  }
+  const low = html.slice(0, 60000).toLowerCase();
+  const uname = name.toLowerCase();
+  const takenList = typeof def.takenMarkers === 'function' ? def.takenMarkers(name) : (def.takenMarkers || []);
+  const freeList = typeof def.freeMarkers === 'function' ? def.freeMarkers(name) : (def.freeMarkers || []);
+  const hasTaken = takenList.some(m => typeof m === 'string' ? low.includes(m.toLowerCase()) : m.test(html.slice(0, 60000)));
+  const hasFree = freeList.some(m => typeof m === 'string' ? low.includes(m.toLowerCase()) : m.test(html.slice(0, 60000)));
+  if (hasTaken && hasFree) return { platform: def.platform, label: def.label, status: 'unknown', reason: 'conflicting signals', url };
+  if (hasTaken) {
+    if (def.requireName && !low.includes(uname))
+      return { platform: def.platform, label: def.label, status: 'unknown', reason: 'marker without username', url };
+    return { platform: def.platform, label: def.label, status: 'taken', confidence: def.conf || 'medium', source: 'content-match', url };
+  }
+  if (hasFree) return { platform: def.platform, label: def.label, status: 'available', confidence: def.conf || 'medium', source: 'content-match', url };
+  return { platform: def.platform, label: def.label, status: 'unknown', reason: 'no decisive markers (login wall?)', url };
+}
+
+async function checkAppStores(name) {
+  // iOS: iTunes Search API — free, no key, authoritative-ish exact-match scan.
+  // Play: no official API — page content sniff (medium), unknown on ambiguity.
+  const out = [];
+  try {
+    const r = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(name) + '&entity=software&limit=25');
+    if (!r.ok) out.push({ platform: 'appstore', label: 'App Store', status: 'unknown', reason: 'iTunes HTTP ' + r.status });
+    else {
+      const d = await r.json();
+      const hits = (d.results || []).filter(a => (a.trackName || '').toLowerCase() === name.toLowerCase());
+      out.push(hits.length
+        ? { platform: 'appstore', label: 'App Store', status: 'taken', confidence: 'high', source: 'itunes-exact', url: hits[0].trackViewUrl }
+        : { platform: 'appstore', label: 'App Store', status: 'available', confidence: 'medium', source: 'itunes-no-exact', url: 'https://apps.apple.com/search?term=' + encodeURIComponent(name) });
+    }
+  } catch (e) {
+    out.push({ platform: 'appstore', label: 'App Store', status: 'unknown', reason: 'fetch failed' });
+  }
+  try {
+    const r = await fetch('https://play.google.com/store/search?q=' + encodeURIComponent(name) + '&c=apps', { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' } });
+    const html = await r.text();
+    const low = html.slice(0, 80000).toLowerCase();
+    const exactRe = new RegExp('"title"\\s*:\\s*"' + escRx(name) + '"', 'i');
+    if (exactRe.test(html.slice(0, 80000))) out.push({ platform: 'play', label: 'Play Store', status: 'taken', confidence: 'medium', source: 'content-match', url: 'https://play.google.com/store/search?q=' + encodeURIComponent(name) + '&c=apps' });
+    else if (/no results|nothing found|try a different search/i.test(low)) out.push({ platform: 'play', label: 'Play Store', status: 'available', confidence: 'low', source: 'content-match', url: 'https://play.google.com/store/search?q=' + encodeURIComponent(name) + '&c=apps' });
+    else out.push({ platform: 'play', label: 'Play Store', status: 'unknown', reason: 'no decisive markers' });
+  } catch (e) {
+    out.push({ platform: 'play', label: 'Play Store', status: 'unknown', reason: 'fetch failed / rate-limited' });
+  }
+  return out;
+}
 
 const HANDLE_RULES = {
   x: u => /^[A-Za-z0-9_]{1,15}$/.test(u) ? null : 'X handles: 1–15 chars, letters/numbers/_ only',
@@ -733,6 +798,7 @@ const HANDLE_RULES = {
 };
 
 async function checkHandle(def, name) {
+  if (def.useProbe || def.takenMarkers || def.freeMarkers) return probeProfile(def, name);
   const ruleBreak = (HANDLE_RULES[def.platform] || (() => null))(name);
   if (ruleBreak) return { platform: def.platform, label: def.label, status: 'invalid', reason: ruleBreak, url: def.url(name) };
   try {
@@ -764,13 +830,14 @@ async function checkHandles(name) {
   const clean = String(name || '').trim().replace(/^@/, '');
   const live = await Promise.all(HANDLE_CHECKS.map(d => checkHandle(d, clean)));
   const ens = clean.includes('.') ? null : await checkEns(clean + '.eth');
+  const apps = await checkAppStores(clean);
   const unknown = HANDLE_UNKNOWN.map(u => {
     const ruleBreak = (HANDLE_RULES[u.platform] || (() => null))(clean);
     return ruleBreak
       ? { platform: u.platform, label: u.label, status: 'invalid', reason: ruleBreak }
       : { platform: u.platform, label: u.label, status: 'unknown', reason: u.reason };
   });
-  const handles = [...live, ...(ens ? [ens] : []), ...unknown];
+  const handles = [...live, ...(ens ? [ens] : []), ...apps, ...unknown];
   const free = handles.filter(h => h.status === 'available').length;
   return { name: clean, handles, summary: { checked: handles.length, available: free } };
 }
