@@ -31,6 +31,7 @@
   <header><div class="eyebrow">SPARKY ELECTRICAL · MORNING BRIEFING</div><h1>⚡ Desk</h1></header>
   <h2>Wake-now alerts</h2><div id="alerts"></div>
   <h2>Backend</h2><div id="backend"></div>
+  <h2>Domain deals</h2><div id="deals"></div>
   <h2>Open jobs</h2><div id="jobs"></div>
   <h2>Numbers</h2><div id="stats"></div>
 </div>
@@ -50,6 +51,13 @@ async function load() {
     document.getElementById("backend").innerHTML = Object.entries(recon.channels).map(([k, v]) =>
       `<div class="card"><div class="row"><b>${k}</b><span class="pill${v.status === "READY" ? " go" : v.status === "ERROR" ? " hot" : ""}">${v.status}</span></div><div class="muted">${v.message || ""}</div></div>`).join("");
   }
+  try {
+    const deals = await api("/api/domains/deals?status=PREPARED");
+    const open = deals.deals || [];
+    document.getElementById("deals").innerHTML = open.length
+      ? open.map(d => `<div class="card"><div class="row"><b>${d.domain}</b><span class="pill">${d.status} · ${d.provider} · $${d.quoted_price ?? "?"}</span></div></div>`).join("")
+      : `<div class="card muted">No open deals.</div>`;
+  } catch (e) { document.getElementById("deals").innerHTML = `<div class="card muted">deals unavailable</div>`; }
   const sparky = projects.find(p => p.slug === SLUG);
   const actions = (sparky?.actions || []).filter(a => !a.done);
   document.getElementById("alerts").innerHTML = actions.length

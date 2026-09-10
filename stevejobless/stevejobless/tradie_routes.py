@@ -587,6 +587,17 @@ def reconcile_tradie(slug: str, db: Session = Depends(_db)):
     }
     checks.update(_backend_checks(db, p.slug))
     try:
+        from sqlalchemy import func as _func
+
+        from .domain_deals import DomainDeal as _Deal
+
+        open_deals = db.scalar(select(_func.count()).select_from(_Deal).where(
+            _Deal.status.in_(("PREPARED", "APPROVED", "REGISTERED")))) or 0
+        checks["backend:domains"] = (("READY", f"{open_deals} open deals — /api/domains/*")
+                                     if open_deals else ("READY", "no open deals — /api/domains/check to start"))
+    except Exception:
+        checks["backend:domains"] = ("MISSING", "domain engine unavailable")
+    try:
         cmail = os.getenv("CMAIL_URL", "https://cmail.tradesprior.workers.dev")
         req = Request(f"{cmail}/api/stats", headers={"User-Agent": "stevejobless-reconcile/0.3"})
         with urlopen(req, timeout=8) as resp:

@@ -63,3 +63,15 @@ photo ask to 2 photos in the kernel FAQ node.
 - Never auto-send: drafts + explicit confirm, any autonomy level.
 - Transcripts have a TTL: the sweeper deletes messages, never job metadata.
 - AGPL repos (AIReceptionist, sara): patterns only, never paste code.
+
+## 7. Domains: check → buy → wire (agent-run, human-confirms-spend)
+```bash
+GET  /api/domains/check?domain=x.dev&provider=porkbun   # checker prefilter + live price
+POST /api/domains/prepare {"domain":"x.dev","max_price":25,"registrant_email":"…"}
+POST /api/domains/{id}/approve                          # one-time token out
+POST /api/domains/{id}/register {"approval_token":"…"}  # rechecks price first
+POST /api/domains/{id}/wire?worker=cmail                # CF zone → NS → routing → business
+```
+Sandbox/default-deny: Porkbun sandbox + name.com dev until `DOMAINS_ALLOW_LIVE=1`.
+Price drift >10% or over budget aborts with a receipt. Name.com needs manual
+NS change (no NS API); Porkbun does it via API.

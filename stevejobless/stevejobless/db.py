@@ -19,6 +19,7 @@ def init_db() -> None:
     from . import models  # noqa: F401
     from . import vault  # noqa: F401
     from . import tradie  # noqa: F401
+    from . import domain_deals  # noqa: F401
     from .publisher import models as pub_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     tradie.migrate(engine)
