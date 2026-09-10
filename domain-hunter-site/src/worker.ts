@@ -86,9 +86,9 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid #eee;font-size:.625
 <!-- SOCIAL HANDLES -->
 <div id="social-tab" class="hidden">
 <div class="search">
-<button class="btn-sm" id="iconToggle" onclick="toggleIcons()" title="select platforms">▲</button>
 <input type="text" id="sq" placeholder="username to check...">
 <button id="sbtn" onclick="checkSocial()">check socials</button>
+<button class="btn-sm" id="iconToggle" onclick="toggleIcons()" title="select platforms">▲</button>
 <div class="cost" id="scost"></div>
 </div>
 <div class="icons-panel" id="iconsPanel">
@@ -134,11 +134,11 @@ const PLATFORMS=[
 {id:'pypi',name:'PyPI',free:true,icon:'P'},
 {id:'crates',name:'crates.io',free:true,icon:'C'},
 {id:'snapchat',name:'Snapchat',free:false,icon:'S'},
-{id:'bluesky',name:'Bluesky',free:true,icon:'B'},
-{id:'telegram',name:'Telegram',free:true,icon:'T'},
-{id:'gitlab',name:'GitLab',free:true,icon:'G'},
-{id:'soundcloud',name:'SoundCloud',free:true,icon:'S'},
-{id:'pinterest',name:'Pinterest',free:true,icon:'P'},
+{id:'bluesky',name:'Bluesky',free:false,icon:'B'},
+{id:'telegram',name:'Telegram',free:false,icon:'T'},
+{id:'gitlab',name:'GitLab',free:false,icon:'G'},
+{id:'soundcloud',name:'SoundCloud',free:false,icon:'S'},
+{id:'pinterest',name:'Pinterest',free:false,icon:'P'},
 ];
 let selectedPlatforms=PLATFORMS.map(p=>p.id);
 
