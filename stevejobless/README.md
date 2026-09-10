@@ -1,3 +1,7 @@
+> **Start at the repo root docs**: [`../docs/GUIDE.md`](../docs/GUIDE.md) (operate) · [`../docs/RECIPES.md`](../docs/RECIPES.md) (runs) · [`../docs/API.md`](../docs/API.md) (reference). What follows is the original project readme.
+
+---
+
 # SteveJobless
 
 **Studio operations for one-person app factories.**
