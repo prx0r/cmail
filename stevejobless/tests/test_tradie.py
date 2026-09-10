@@ -121,3 +121,15 @@ def test_callback_gate_blocks_big_send_until_verified(client):
                        json={"verifier": "tradie:voice:+447000000001"}).json()["callback_verified"] is True
     r2 = client.post(f"/api/tradie/sparky/jobs/{jid}/quote/{qid}/send").json()
     assert r2["quote_status"] in ("approved", "sent")
+
+
+def test_instagram_inbound_continuity_no_token(client):
+    payload = {"entry": [{"messaging": [
+        {"sender": {"id": "iguser1"}, "message": {"text": "boiler service?"}}]}]}
+    j1 = client.post("/api/tradie/instagram/webhook", json=payload).json()["jobs"][0]
+    payload["entry"][0]["messaging"][0]["message"]["text"] = "next week?"
+    j2 = client.post("/api/tradie/instagram/webhook", json=payload).json()["jobs"][0]
+    assert j1 == j2
+    job = client.get(f"/api/tradie/sparky/jobs/{j1}").json()
+    assert len(job["transcript"]) == 2
+    assert job["job"]["status"] == "new"

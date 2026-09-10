@@ -62,3 +62,20 @@ def test_stats_ignores_open_jobs_and_handles_empty():
              "final_price": 135, "quoted_price": 142}]
     st = job_stats(rows)
     assert st["fault"] == {"n": 1, "avg_min": 80.0, "avg_revenue": 135.0}
+
+
+def test_calibration_bands_provisional():
+    from stevejobless.tradie import calibration
+
+    jobs = [
+        {"score": 80, "status": "done", "final_price": 400, "quoted_price": 380},
+        {"score": 70, "status": "lost", "final_price": None, "quoted_price": 400},
+        {"score": 50, "status": "done", "final_price": 200, "quoted_price": 200},
+        {"score": 20, "status": "lost", "final_price": None, "quoted_price": 100},
+        {"score": None, "status": "done", "final_price": 1, "quoted_price": 1},
+    ]
+    cal = calibration(jobs)
+    assert cal["take(65+)"]["n"] == 2 and cal["take(65+)"]["win_rate"] == 0.5
+    assert cal["take(65+)"]["avg_margin"] == round(400 / 380, 2)
+    assert cal["maybe(40-65)"]["win_rate"] == 1.0
+    # provisional: weights v1 stand until 20+ real closed jobs, then retune bands
