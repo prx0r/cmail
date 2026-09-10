@@ -684,7 +684,79 @@ async def ig_inbound(payload: dict[str, Any], db: Session = Depends(_db)):
     return {"ok": True, "jobs": out}
 
 
-# ---- WhatsApp webhook (Meta → here → intake) ----
+# ---- social claim-verify (human claims, machine verifies + records) ----
+
+SIGNUP_URLS = {
+    "github": "https://github.com/signup",
+    "x": "https://x.com/i/flow/signup",
+    "youtube": "https://www.youtube.com/create_channel",
+    "instagram": "https://www.instagram.com/accounts/emailsignup/",
+    "tiktok": "https://www.tiktok.com/signup",
+}
+
+VERIFY_URLS = {
+    "github": "https://github.com/{h}",
+    "x": "https://x.com/{h}",
+    "youtube": "https://www.youtube.com/@{h}",
+}
+
+
+@router.get("/{slug}/social/claim-kit")
+def social_claim_kit(slug: str, name: str, db: Session = Depends(_db)):
+    """Availability map (via checker worker) + ordered claim checklist with
+    deep links. Claiming itself is human — platforms allow no other way."""
+    import json as _json
+    from urllib.request import Request, urlopen
+
+    p, _ = _project(db, slug)
+    try:
+        req = Request(f"https://domainnamechecker.tradesprior.workers.dev/api/handles/{name}",
+                      headers={"User-Agent": "stevejobless-bridge/0.3"})
+        with urlopen(req, timeout=30) as resp:
+            handles = _json.loads(resp.read()).get("handles", [])
+    except Exception as e:
+        raise HTTPException(502, f"checker unreachable: {str(e)[:120]}")
+    steps = []
+    for h in handles:
+        plat = h["platform"]
+        if h["status"] == "available" and plat in SIGNUP_URLS:
+            steps.append({"platform": plat, "action": "claim", "at": SIGNUP_URLS[plat],
+                          "then": f"POST /api/tradie/{slug}/social/verify"})
+        elif h["status"] == "unknown":
+            steps.append({"platform": plat, "action": "check manually",
+                          "reason": h.get("reason", "")})
+    return {"slug": slug, "name": name, "handles": handles, "claim_order": steps}
+
+
+class SocialVerify(BaseModel):
+    platform: str
+    handle: str
+
+
+@router.post("/{slug}/social/verify")
+def social_verify(slug: str, body: SocialVerify, db: Session = Depends(_db)):
+    """Verify a human-claimed handle resolves, record it as a connected asset."""
+    from urllib.request import Request, urlopen
+
+    from .vault import SocialManager
+
+    p, _ = _project(db, slug)
+    tmpl = VERIFY_URLS.get(body.platform)
+    live = False
+    if tmpl:
+        try:
+            req = Request(tmpl.format(h=body.handle.lstrip("@")),
+                          headers={"User-Agent": "stevejobless-bridge/0.3"}, method="GET")
+            with urlopen(req, timeout=15) as resp:
+                live = resp.status == 200
+        except Exception:
+            live = False
+    mgr = SocialManager(db)
+    if live:
+        mgr.connect(slug, body.platform, body.handle)
+        return {"ok": True, "verified": True, "platform": body.platform, "handle": body.handle}
+    return {"ok": True, "verified": False, "platform": body.platform, "handle": body.handle,
+            "note": "does not resolve (yet) — claim first, then re-verify"}
 @router.get("/whatsapp/webhook")
 def wa_verify(hub_mode: str = "", hub_verify_token: str = "", hub_challenge: str = ""):
     import os

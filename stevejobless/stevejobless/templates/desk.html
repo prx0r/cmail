@@ -32,6 +32,7 @@
   <h2>Wake-now alerts</h2><div id="alerts"></div>
   <h2>Backend</h2><div id="backend"></div>
   <h2>Domain deals</h2><div id="deals"></div>
+  <h2>Renewals</h2><div id="renewals"></div>
   <h2>Open jobs</h2><div id="jobs"></div>
   <h2>Numbers</h2><div id="stats"></div>
 </div>
@@ -58,6 +59,12 @@ async function load() {
       ? open.map(d => `<div class="card"><div class="row"><b>${d.domain}</b><span class="pill">${d.status} · ${d.provider} · $${d.quoted_price ?? "?"}</span></div></div>`).join("")
       : `<div class="card muted">No open deals.</div>`;
   } catch (e) { document.getElementById("deals").innerHTML = `<div class="card muted">deals unavailable</div>`; }
+  try {
+    const ren = await api("/api/domains/renewals");
+    document.getElementById("renewals").innerHTML = ren.domains.length
+      ? ren.domains.map(d => `<div class="card"><div class="row"><b>${d.domain}</b><span class="pill${d.alert ? " hot" : " go"}">${d.days_left != null ? d.days_left + "d left" : "?"}</span></div><div class="muted">expires ${d.expires || "?"} · ${d.state || ""}</div></div>`).join("")
+      : `<div class="card muted">No Cloudflare-registered domains. External zones aren't listed — transfer in or watch registrar mail.</div>`;
+  } catch (e) { document.getElementById("renewals").innerHTML = `<div class="card muted">renewals unavailable</div>`; }
   const sparky = projects.find(p => p.slug === SLUG);
   const actions = (sparky?.actions || []).filter(a => !a.done);
   document.getElementById("alerts").innerHTML = actions.length

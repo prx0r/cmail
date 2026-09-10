@@ -91,3 +91,18 @@ def test_whatsapp_stubs(client):
     assert channels.send_whatsapp("+447000000001", "hi")["stubbed"] is True
     assert channels.parse_whatsapp_webhook({"entry": [{"changes": [{"value": {"messages": [
         {"from": "447000000001", "type": "text", "text": {"body": "need sparky"}, "timestamp": "1"}]}}]}]})[0]["text"] == "need sparky"
+
+
+def test_social_claim_kit_live_checker(client):
+    r = client.get("/api/tradie/sparky/social/claim-kit?name=sparkytest12345").json()
+    assert "handles" in r and "claim_order" in r
+    assert any(s["platform"] == "github" for s in r["claim_order"])
+
+
+def test_social_verify_records_resolving_handle(client):
+    r = client.post("/api/tradie/sparky/social/verify",
+                    json={"platform": "github", "handle": "octocat"}).json()
+    assert r["ok"] and r["verified"] is True
+    r2 = client.post("/api/tradie/sparky/social/verify",
+                     json={"platform": "github", "handle": "nosuchuser-zz-qq-404"}).json()
+    assert r2["verified"] is False

@@ -56,7 +56,13 @@ def _authed(base: str, api_token: str, method: str, path: str,
         with urlopen(req, timeout=timeout) as resp:
             d = json.loads(resp.read() or b"{}")
     except Exception as e:
-        raise ProviderError(f"{method} {path}: {e}")
+        detail = ""
+        if hasattr(e, "read"):
+            try:
+                detail = f" :: {e.read()[:400].decode(errors='replace')}"
+            except Exception:
+                pass
+        raise ProviderError(f"{method} {path}: {e}{detail}")
     if isinstance(d, dict) and d.get("success") is False:
         raise ProviderError(f"{method} {path}: {d.get('errors')}")
     return d
@@ -247,7 +253,7 @@ class CloudflareRegistrar:
             return {"domain": domain, "available": False, "price": None,
                     "reason": "premium tier not supported via API"}
         pricing = r.get("pricing") or {}
-        price = pricing.get("registration") or pricing.get("register")
+        price = pricing.get("registration_cost") or pricing.get("registration") or pricing.get("register")
         return {"domain": domain, "available": bool(r.get("registrable")),
                 "price": float(price) if price is not None else None,
                 "premium": False, "reason": r.get("reason")}
@@ -261,3 +267,8 @@ class CloudflareRegistrar:
     def registration_status(self, domain: str) -> dict:
         d = self._api("GET", f"/registrations/{domain}")
         return d.get("result", d)
+
+    def list_registrations(self) -> list[dict]:
+        d = self._api("GET", "/registrations")
+        res = d.get("result")
+        return res if isinstance(res, list) else []

@@ -361,6 +361,33 @@ def claim(body: Claim, db: Session = Depends(_db)):
                            max_price=body.max_price, registrant_email=body.registrant_email), db)
 
 
+@router.get("/renewals")
+def renewals(warn_days: int = 30, db: Session = Depends(_db)):
+    """Expiry monitor across Cloudflare registrations. Expiring soon → reconcile alert."""
+    from datetime import datetime, timezone
+
+    try:
+        regs = _cf_reg(db).list_registrations()
+    except HTTPException:
+        raise
+    except prov.ProviderError as e:
+        raise HTTPException(502, str(e)[:200])
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in regs:
+        exp = r.get("expires_at") or r.get("expiry")
+        days = None
+        try:
+            days = (datetime.fromisoformat(str(exp).replace("Z", "+00:00")) - now).days
+        except Exception:
+            pass
+        out.append({"domain": r.get("domain_name") or r.get("name"), "expires": exp,
+                    "days_left": days, "state": r.get("status"),
+                    "alert": days is not None and days <= warn_days})
+    out.sort(key=lambda x: (x["days_left"] is None, x["days_left"]))
+    return {"domains": out, "alerts": sum(1 for x in out if x["alert"])}
+
+
 @router.get("/deals")
 def list_deals(status: str | None = None, db: Session = Depends(_db)):
     q = select(DomainDeal).order_by(DomainDeal.id.desc()).limit(50)
