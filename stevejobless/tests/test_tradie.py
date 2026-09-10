@@ -106,3 +106,16 @@ def test_social_verify_records_resolving_handle(client):
     r2 = client.post("/api/tradie/sparky/social/verify",
                      json={"platform": "github", "handle": "nosuchuser-zz-qq-404"}).json()
     assert r2["verified"] is False
+
+
+def test_callback_gate_blocks_big_send_until_verified(client):
+    jid = client.post("/api/tradie/sparky/intake", json={
+        "customer_name": "Big", "customer_phone": "+447000000060",
+        "job_type": "consumer_unit", "description": "fusebox"}).json()["job_id"]
+    qid = client.get(f"/api/tradie/sparky/jobs/{jid}").json()["quotes"][0]["id"]
+    r = client.post(f"/api/tradie/sparky/jobs/{jid}/quote/{qid}/send")
+    assert r.status_code == 409  # 450+ labour ≥ 500 default threshold
+    assert client.post(f"/api/tradie/sparky/jobs/{jid}/callback",
+                       json={"verifier": "tradie:voice:+447000000001"}).json()["callback_verified"] is True
+    r2 = client.post(f"/api/tradie/sparky/jobs/{jid}/quote/{qid}/send").json()
+    assert r2["quote_status"] in ("approved", "sent")

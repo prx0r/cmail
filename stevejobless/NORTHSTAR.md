@@ -32,7 +32,7 @@ steve /api/domains/* (brain)
 | Availability (domains, handles, ENS) | ✅ all of it | — |
 | Price compare + cheapest-provider pick | ✅ | — |
 | Domain purchase | executes | **confirms spend** (one-time token) |
-| Billing profile, registrant contact, agreements | — | **once, in dashboard** (Cloudflare requires it) |
+| Billing profile + account agreements | — | **once, in dashboard** |
 | Nameservers / zone / routing / mailboxes / business | ✅ all of it | — |
 | Social account *creation* | ❌ impossible — see below | **claims handles** (guided checklist) |
 | Social API connect (post/read/DM) | ✅ after OAuth | **one OAuth click per platform** |
@@ -49,7 +49,7 @@ steve /api/domains/* (brain)
 2. **Cloudflare Registrar API excludes some TLDs** (`.lol`, `.inc`, `.sh`,
    `.cc`, `.new`, …) and premium names. Exotic TLDs buy on Porkbun/Name.com,
    then NS-move to Cloudflare — same end state, one extra hop.
-3. **First-time Cloudflare billing + registrant contact are dashboard-only.**
+3. **First-time Cloudflare billing + account agreements are dashboard-only.**
    One-time, owner-only, ~5 minutes. After that the API loop is closed.
 4. **Meta approvals gate WhatsApp/IG sends**, not our code. Official Cloud
    API path, number owned in the business's own Manager.

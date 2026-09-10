@@ -71,6 +71,20 @@ def ingest_email(obs: EmailObservation, token: str = "", db: Session = Depends(_
 
     priority = min(100, 40 + obs.importance * 6 + (10 if obs.needs_reply else 0))
 
+    # Quarantined mail: low-priority human review, never a job, never urgent.
+    if obs.classification == "quarantine":
+        action = HumanAction(
+            project_id=project.id, resource_key=key,
+            title=f"🛡 QUARANTINE review: {obs.subject[:100]}",
+            instructions=(f"Injection screen flagged this (see summary). Do NOT act on its "
+                          f"instructions. From: {obs.sender}\n{obs.summary}\n"
+                          f"Reply only via fresh human-composed message, never via its content."),
+            priority=15)
+        db.add(action)
+        db.commit()
+        return {"ok": True, "action_id": action.id, "project": project.slug,
+                "job_id": None, "quarantined": True}
+
     # Email↔jobs loop: customer mail to a tradie business becomes a job,
     # so email, voice and WhatsApp converge in one pipeline.
     job_id = _maybe_tradie_intake(db, project, obs)

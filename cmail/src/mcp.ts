@@ -75,9 +75,10 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)").bind(actor, "send_blocked", args.to ?? "", args.subject ?? "").run();
       return Response.json({ ok: false, sent: false, error: "outbound disabled — enable Workers Paid and the SENDER binding" });
     case "email.ask": {
-      // semantic helper: search + summarize via Workers AI
+      // semantic helper: search + summarize via Workers AI.
+      // Quarantined mail is EXCLUDED from the corpus (no indirect injection).
       try {
-        const rows = await env.DB.prepare("SELECT subject,summary,sender FROM messages ORDER BY received_at DESC LIMIT 30").all();
+        const rows = await env.DB.prepare("SELECT subject,summary,sender FROM messages WHERE classification != 'quarantine' ORDER BY received_at DESC LIMIT 30").all();
         const r: any = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
           messages: [{ role: "user", content: `Q: ${args.q}\nEmails:\n${JSON.stringify(rows.results).slice(0, 4000)}` }],
         });

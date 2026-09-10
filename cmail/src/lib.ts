@@ -31,7 +31,41 @@ export interface Classification {
   summary: string;
 }
 
-const KNOWN_CLASSES = new Set(["needs_reply", "receipt", "fyi", "urgent"]);
+// Injection screen: override + exfiltration patterns in UNTRUSTED content.
+// Quarantined mail never becomes urgent, never fires webhooks, never enters
+// agent corpora. Legit business urgency ("refund approval please") is NOT here.
+const OVERRIDE_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions|prompts|rules)/i,
+  /disregard\s+(all\s+)?(previous|prior|system)/i,
+  /you\s+are\s+now\s+(a|an|my)\s+/i,
+  /\b(new|updated|replacement)\s+instructions\b/i,
+  /system\s*:\s*(you|new)/i,
+  /\bjailbreak\b/i,
+  /do\s+not\s+tell\s+(the\s+)?(user|owner|human)/i,
+  /forget\s+(everything|all|your)\s+(you|prior)/i,
+];
+const EXFIL_PATTERNS = [
+  /\b(list|export|send|forward|dump)\b[^.]{0,60}\b(all\s+)?(customers|clients|contacts|mailbox|inbox)\b/i,
+  /\b(send|show|reveal|forward|list)\b[^.]{0,60}\b(api\s*keys?|passwords?|secrets?|tokens?|credentials?)\b/i,
+  /\bdelete\b[^.]{0,40}\b(all|database|bucket|everything)\b/i,
+  /forward\s+this\s+(thread|email|conversation)\s+to\s+\S+@/i,
+];
+
+export function screenInjection(subject: string, snippet: string): { quarantined: boolean; reasons: string[] } {
+  const text = `${subject}\n${snippet}`;
+  const reasons: string[] = [];
+  for (const re of OVERRIDE_PATTERNS) {
+    const m = text.match(re);
+    if (m) { reasons.push(`override: "${m[0].slice(0, 60)}"`); break; }
+  }
+  for (const re of EXFIL_PATTERNS) {
+    const m = text.match(re);
+    if (m) { reasons.push(`exfil: "${m[0].slice(0, 60)}"`); break; }
+  }
+  return { quarantined: reasons.length > 0, reasons };
+}
+
+const KNOWN_CLASSES = new Set(["needs_reply", "receipt", "fyi", "urgent", "quarantine"]);
 
 // AI output is untrusted: coerce to strict types so D1 binds and webhook
 // thresholds never see garbage (e.g. needs_reply:"0" string is truthy!).

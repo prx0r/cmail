@@ -1,5 +1,5 @@
 import type { Env } from "./do";
-import { routeAddress, threadId, classify, canDo } from "./lib";
+import { routeAddress, threadId, classify, canDo, screenInjection } from "./lib";
 import { handleMcp } from "./mcp";
 export { MailboxDO } from "./do";
 
@@ -29,6 +29,15 @@ async function processInbound(env: Env, m: InboundMsg): Promise<string> {
   const c = await classify(env, subject, snippet);
   const tid = threadId(subject);
   const msgId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // Injection screen BEFORE anything else touches this: quarantine can only
+  // downgrade (never urgent, never webhooks, never agent corpora).
+  const screen = screenInjection(subject, snippet);
+  if (screen.quarantined) {
+    c.classification = "quarantine";
+    c.needs_reply = 0;
+    c.importance = Math.min(c.importance, 3);
+    c.summary = `[QUARANTINED: ${screen.reasons.join("; ")}] ${c.summary}`.slice(0, 500);
+  }
   const r2Key = `email/raw/${domain}/${localPart}/${Date.now()}.eml`;
   if (m.raw) await env.RAW.put(r2Key, m.raw);
 
@@ -50,7 +59,8 @@ async function processInbound(env: Env, m: InboundMsg): Promise<string> {
 
   // Direction 2 (webhook): important mail → stevejobless action queue.
   // Fire-and-forget; inbound mail never blocks on the bridge.
-  if ((env as any).STEVE_URL && (c.needs_reply || c.importance >= 7)) {
+  // Quarantined mail NEVER webhooks (reviewed in place, not in the queue).
+  if ((env as any).STEVE_URL && !screen.quarantined && (c.needs_reply || c.importance >= 7)) {
     const hook = fetch(`${(env as any).STEVE_URL}/api/observations/email?token=${(env as any).STEVE_BRIDGE_TOKEN ?? ""}`, {
       method: "POST",
       headers: { "content-type": "application/json" },

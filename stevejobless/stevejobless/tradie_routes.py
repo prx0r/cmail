@@ -380,16 +380,44 @@ def make_quote(slug: str, job_id: int, channel: str = "whatsapp", db: Session = 
 
 @router.post("/{slug}/jobs/{job_id}/quote/{quote_id}/send")
 def send_quote(slug: str, job_id: int, quote_id: int, db: Session = Depends(_db)):
-    """Explicit confirm path: tradie approved → send via WhatsApp (or stub)."""
+    """Explicit confirm path: tradie approved → send via WhatsApp (or stub).
+    Money-move call-back rule: quotes at/above the kernel threshold need a
+    voice confirm on the KNOWN customer number first (mark via /callback),
+    so a hijacked chat thread alone can never release money."""
     p, _ = _project(db, slug)
+    kernel = _kernel(db, p.id)
     quote = db.scalar(select(Quote).where(Quote.id == quote_id, Quote.job_id == job_id))
     if not quote:
         raise HTTPException(404, "no such quote")
     job = db.scalar(select(Job).where(Job.id == job_id))
+    threshold = float(kernel.get("callback_threshold", 500))
+    if quote.total >= threshold and not (job.extra or {}).get("callback_verified"):
+        raise HTTPException(409, f"£{quote.total:.0f} ≥ £{threshold:.0f} call-back threshold — "
+                                 f"verify by voice on the known number, then POST /jobs/{job_id}/callback")
     res = channels.send_whatsapp(job.customer_phone, quote.message) if job.customer_phone else {"ok": False, "stubbed": True, "note": "no customer phone"}
     quote.status = "sent" if res.get("ok") and not res.get("stubbed") else "approved"
     db.commit()
     return {"ok": True, "quote_status": quote.status, "channel_result": res}
+
+
+class CallbackIn(BaseModel):
+    verifier: str = ""  # who confirmed, e.g. "tradie:voice:+447…"
+    note: str = ""
+
+
+@router.post("/{slug}/jobs/{job_id}/callback")
+def mark_callback(slug: str, job_id: int, body: CallbackIn, db: Session = Depends(_db)):
+    """Record a voice call-back verification on the known customer number."""
+    p, _ = _project(db, slug)
+    job = db.scalar(select(Job).where(Job.id == job_id, Job.project_id == p.id))
+    if not job:
+        raise HTTPException(404, "no such job")
+    job.extra = {**(job.extra or {}), "callback_verified": True,
+                 "callback_by": body.verifier[:120], "callback_note": body.note[:300]}
+    db.add(JobMessage(job_id=job.id, role="tradie", channel="app",
+                      content=f"call-back verified by {body.verifier[:120]}"))
+    db.commit()
+    return {"ok": True, "callback_verified": True}
 
 
 # ---- stats + feed scoring ----
