@@ -1,5 +1,5 @@
 import type { Env } from "./do";
-import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains, fullSocialCheck } from "./names";
+import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains, fullSocialCheck, bulkCheck, bulkPersist, bulkHistory } from "./names";
 import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } from "./tasks";
 import { startPipeline } from "./pipeline";
 
@@ -10,7 +10,7 @@ const TOOLS = [
   "email.list_domains", "email.list_mailboxes", "email.inbox", "email.search",
   "email.read", "email.thread", "email.draft", "email.reply", "email.send",
   "email.archive", "email.label", "email.needs_reply", "email.ask",
-  "name.check", "name.verify_domain", "name.check_handles", "name.search", "name.social",
+  "name.check", "name.verify_domain", "name.check_handles", "name.search", "name.social", "name.bulk_check", "name.bulk_history",
   "name.cf_check", "name.cf_purchase", "name.wire_email",
   "name.phone_search", "name.phone_list", "name.phone_purchase", "name.read_sms",
   "task.create", "task.list", "task.get", "task.deliver", "task.complete",
@@ -134,6 +134,25 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       if (!name) return Response.json({ error: "name required" }, { status: 400 });
       const report = await fullSocialCheck(name, env as any);
       return Response.json(report);
+    }
+    case "name.bulk_check": {
+      // Beast mode: up to 100 names/call (worker subrequest budget); page with offset.
+      const names = Array.isArray(args.names) ? args.names.map((n: any) => String(n ?? "")) : [];
+      if (!names.length) return Response.json({ error: "names[] required (max 100/call, page with offset)" }, { status: 400 });
+      if (names.length > 100) return Response.json({ error: "max 100 names per call — page with offset" }, { status: 400 });
+      const report = await bulkCheck(names, args.rules ?? {});
+      let run_id: string | null = null;
+      try {
+        run_id = await bulkPersist(env as any, report);
+      } catch (e: any) {
+        // Ledger write is best-effort; the report is still valid.
+        run_id = null;
+      }
+      return Response.json({ ...report, run_id, persisted: run_id !== null });
+    }
+    case "name.bulk_history": {
+      const history = await bulkHistory(env as any, args.rules_hash ? String(args.rules_hash) : undefined);
+      return Response.json(history);
     }
     case "name.cf_check": {
       const domain = String(args.domain ?? "").trim().toLowerCase();

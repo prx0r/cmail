@@ -713,3 +713,202 @@ export function storeInboundSms(from: string, to: string, text: string): void {
 export function readSms(to: string, limit: number = 10): Array<{ from: string; to: string; text: string; received_at: string }> {
   return (smsStore.get(to) || []).slice(-limit);
 }
+
+// === BEAST MODE: bulk domain mining ===
+// Structural scoring steals agentseolab/domainarena _structural_score
+// (vowel ratio + length fit). Hit-rate ledger enables P(hit | rules)
+// via Wilson lower bound once enough runs accumulate.
+
+export interface BulkRules {
+  tlds?: string[];          // default ['co.uk'] (.co.uk = DNS heuristic; no Nominet RDAP — endpoint 429s)
+  max_len?: number;         // default 12 (SLD chars, van-test ceiling)
+  allow_hyphen?: boolean;   // default false
+  allow_digits?: boolean;   // default false
+  min_vowel_ratio?: number; // default 0.2
+  min_confidence?: 'low' | 'medium' | 'high'; // default 'medium': drop weaker verdicts
+  max_names?: number;       // default 50, hard cap 100/call (worker subrequest budget); page with offset
+  offset?: number;          // default 0
+}
+
+export interface BulkHit {
+  domain: string;
+  status: 'available' | 'taken' | 'unknown' | 'error';
+  confidence: string;
+  structural: number;  // 0..1 vowel ratio + length fit
+  van: number;         // 0..1 spell-over-phone
+  combined: number;    // 0..1 mean of structural + van
+  buy_url: string;
+}
+
+export interface BulkReport {
+  rules: Required<Omit<BulkRules, 'offset'>> & { offset: number };
+  rules_hash: string;
+  total: number;
+  checked: number;
+  hits: BulkHit[];
+  hit_rate: number;
+  summary: { available: number; taken: number; unknown: number; total: number };
+  timestamp: string;
+}
+
+export function structuralScore(sld: string): number {
+  const s = sld.toLowerCase();
+  const vowels = (s.match(/[aeiou]/g) || []).length;
+  const pronounceable = vowels / Math.max(s.length, 1);
+  const length_fit = s.length <= 12 ? 1.0 : Math.max(0.0, 1.0 - (s.length - 12) / 20);
+  return Math.round((0.5 * pronounceable + 0.5 * length_fit) * 1000) / 1000;
+}
+
+export function vanScore(name: string): number {
+  // Spell-over-phone: alpha-only, short, vowel-bearing names survive dictation.
+  const s = name.toLowerCase();
+  if (!/^[a-z]+$/.test(s)) return 0.3;
+  const vowels = (s.match(/[aeiou]/g) || []).length;
+  if (vowels < 2) return 0.4;
+  if (s.length <= 7) return 1.0;
+  if (s.length <= 12) return 0.8;
+  return 0.5;
+}
+
+function fnv1a(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+}
+
+export function rulesHash(rules: BulkRules): string {
+  const norm = {
+    tlds: [...(rules.tlds ?? ['co.uk'])].sort(),
+    max_len: rules.max_len ?? 12,
+    allow_hyphen: rules.allow_hyphen ?? false,
+    allow_digits: rules.allow_digits ?? false,
+    min_vowel_ratio: rules.min_vowel_ratio ?? 0.2,
+    min_confidence: rules.min_confidence ?? 'medium',
+  };
+  return 'rules_' + fnv1a(JSON.stringify(norm));
+}
+
+const CONF_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
+
+export async function bulkCheck(rawNames: string[], rules?: BulkRules): Promise<BulkReport> {
+  const r: Required<Omit<BulkRules, 'offset'>> & { offset: number } = {
+    tlds: rules?.tlds?.length ? rules.tlds.map(t => t.toLowerCase()) : ['co.uk'],
+    max_len: rules?.max_len ?? 12,
+    allow_hyphen: rules?.allow_hyphen ?? false,
+    allow_digits: rules?.allow_digits ?? false,
+    min_vowel_ratio: rules?.min_vowel_ratio ?? 0.2,
+    min_confidence: rules?.min_confidence ?? 'medium',
+    max_names: Math.min(rules?.max_names ?? 50, 100),
+    offset: rules?.offset ?? 0,
+  };
+  const clean = [...new Set(rawNames.map(n => String(n ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '')).filter(Boolean))];
+  const page = clean.slice(r.offset, r.offset + r.max_names);
+
+  const hits: BulkHit[] = [];
+  // Sequential: RDAP endpoints rate-limit aggressively (Nominet 429s on sight).
+  for (const name of page) {
+    const sld = name;
+    const structural = structuralScore(sld);
+    const van = vanScore(sld);
+    const combined = Math.round(((structural + van) / 2) * 1000) / 1000;
+    // Rules pre-filter: skip checks that cannot pass (saves subrequests).
+    const vowels = (sld.match(/[aeiou]/g) || []).length / Math.max(sld.length, 1);
+    const passesRules = sld.length <= r.max_len
+      && (r.allow_hyphen || !sld.includes('-'))
+      && (r.allow_digits || !/\d/.test(sld))
+      && vowels >= r.min_vowel_ratio;
+    for (const tld of r.tlds) {
+      const domain = `${sld}.${tld}`;
+      if (!passesRules) {
+        hits.push({ domain, status: 'unknown', confidence: 'low', structural, van, combined, buy_url: CLOUDFLARE_BUY_LINK(domain) });
+        continue;
+      }
+      try {
+        const v = await verifyDomain(domain);
+        const ok = (CONF_RANK[v.registration.confidence] ?? 0) >= (CONF_RANK[r.min_confidence] ?? 1);
+        hits.push({
+          domain,
+          status: ok ? v.registration.status : 'unknown',
+          confidence: v.registration.confidence,
+          structural, van, combined,
+          buy_url: v.buy_url,
+        });
+      } catch (e: any) {
+        hits.push({ domain, status: 'error', confidence: 'low', structural, van, combined, buy_url: CLOUDFLARE_BUY_LINK(domain) });
+      }
+    }
+  }
+
+  const avail = hits.filter(h => h.status === 'available');
+  avail.sort((a, b) => b.combined - a.combined);
+  const taken = hits.filter(h => h.status === 'taken').length;
+  const unknown = hits.length - avail.length - taken;
+  return {
+    rules: r,
+    rules_hash: rulesHash(rules ?? {}),
+    total: clean.length,
+    checked: hits.length,
+    hits: avail,
+    hit_rate: hits.length ? Math.round((avail.length / hits.length) * 10000) / 10000 : 0,
+    summary: { available: avail.length, taken, unknown, total: hits.length },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// Wilson lower bound: honest hit-rate with few runs (steals agentseolab pairwise_selection).
+export function wilsonLower(hits: number, n: number, z = 1.96): number {
+  if (n <= 0) return 0;
+  const p = hits / n;
+  const den = 1 + (z * z) / n;
+  const centre = p + (z * z) / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n);
+  return Math.round(Math.max(0, (centre - margin) / den) * 10000) / 10000;
+}
+
+interface BulkDb {
+  prepare(q: string): any;
+}
+
+export async function bulkPersist(env: { DB: BulkDb }, report: BulkReport): Promise<string> {
+  const id = 'bulk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  await env.DB.prepare(
+    'INSERT INTO bulk_runs (id, rules_hash, rules_json, total, hits, hit_rate, results_json) VALUES (?,?,?,?,?,?,?)'
+  ).bind(id, report.rules_hash, JSON.stringify(report.rules),
+    report.summary.total, report.summary.available, report.hit_rate,
+    JSON.stringify(report.hits)).run();
+  await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
+    .bind('system', 'bulk_check', report.rules_hash, `${report.summary.available}/${report.summary.total} hits`).run();
+  return id;
+}
+
+export async function bulkHistory(env: { DB: BulkDb }, rules_hash?: string): Promise<any> {
+  const rows = rules_hash
+    ? (await env.DB.prepare('SELECT rules_hash, total, hits FROM bulk_runs WHERE rules_hash=?').bind(rules_hash).all()).results
+    : (await env.DB.prepare('SELECT rules_hash, total, hits FROM bulk_runs').all()).results;
+  const byHash: Record<string, { runs: number; checked: number; hits: number }> = {};
+  for (const row of (rows as any[]) || []) {
+    const h = String((row as any).rules_hash);
+    byHash[h] = byHash[h] || { runs: 0, checked: 0, hits: 0 };
+    byHash[h].runs += 1;
+    byHash[h].checked += Number((row as any).total) || 0;
+    byHash[h].hits += Number((row as any).hits) || 0;
+  }
+  const profiles = Object.entries(byHash).map(([hash, s]) => ({
+    rules_hash: hash,
+    runs: s.runs,
+    checked: s.checked,
+    hits: s.hits,
+    hit_rate: s.checked ? Math.round((s.hits / s.checked) * 10000) / 1000 / 10 : 0,
+    wilson_lower: wilsonLower(s.hits, s.checked),
+    low_sample: s.checked < 30,
+  }));
+  return {
+    profiles,
+    note: profiles.length === 0
+      ? 'no bulk runs logged yet — P(hit|rules) needs data; run name.bulk_check first'
+      : 'wilson_lower is the honest P(hit) until checked>=30 per profile',
+  };
+}

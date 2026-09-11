@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verifyDomain, checkHandles, checkAvailability } from "./names";
+import { verifyDomain, checkHandles, checkAvailability, structuralScore, vanScore, rulesHash, wilsonLower, bulkCheck } from "./names";
 
 describe("verifyDomain", () => {
   it("detects taken .com domain", async () => {
@@ -46,4 +46,35 @@ describe("checkAvailability", () => {
     expect(report.summary.domains_total).toBe(2);
     expect(report.timestamp).toBeDefined();
   }, 20000);
+});
+
+describe("beast mode scoring (steals domainarena structural formula)", () => {
+  it("scores pronounceable short names higher", () => {
+    expect(structuralScore("malorie")).toBeGreaterThan(structuralScore("xqztkvr"));
+    expect(structuralScore("malorie")).toBeLessThanOrEqual(1);
+    expect(structuralScore("malorie")).toBeGreaterThanOrEqual(0);
+  });
+  it("van test rewards short alpha names", () => {
+    expect(vanScore("malorie")).toBe(1.0);
+    expect(vanScore("malorie-smith")).toBeLessThan(vanScore("malorie"));
+    expect(vanScore("xqzt")).toBeLessThan(vanScore("malorie"));
+  });
+  it("rules hash is stable and order-independent for tlds", () => {
+    const a = rulesHash({ tlds: ["co.uk", "com"] });
+    const b = rulesHash({ tlds: ["com", "co.uk"] });
+    expect(a).toBe(b);
+    expect(rulesHash({ max_len: 8 })).not.toBe(rulesHash({ max_len: 12 }));
+  });
+  it("wilson lower bound is conservative on thin data", () => {
+    expect(wilsonLower(0, 0)).toBe(0);
+    expect(wilsonLower(1, 1)).toBeLessThan(1);
+    expect(wilsonLower(90, 100)).toBeGreaterThan(wilsonLower(9, 10));
+  });
+  it("bulkCheck runs live on 2 names", async () => {
+    const report = await bulkCheck(["malorie", "xqztkvr999"], { tlds: ["co.uk"] });
+    expect(report.checked).toBe(2);
+    expect(report.rules_hash).toMatch(/^rules_[0-9a-f]{8}$/);
+    expect(report.hits.every(h => typeof h.combined === "number")).toBe(true);
+    expect(typeof report.hit_rate).toBe("number");
+  }, 30000);
 });
