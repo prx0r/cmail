@@ -3,6 +3,19 @@
 ## What This Is
 Autonomous name acquisition pipeline. Agent types a name → sees domains + handles → buys domain → wires email → signs up for accounts.
 
+## Start here (docs map)
+- Tool surface: `docs/MCP_REFERENCE.md` (all 34 tools — read before calling anything unfamiliar)
+- Domains: `docs/DOMAINS.md` (buying flow, registrar-truth law, naming science)
+- Socials: `docs/SOCIALS.md` · Phone: `docs/PHONE.md`
+- Verification: `docs/EMAIL_VERIFICATION.md` (EVP-1) · Failures: `docs/TROUBLESHOOTING.md`
+- History, not guidance: `archive/` · Session gold: `a-logs/`
+
+## Standing laws
+1. **NEVER buy without explicit human `confirmed:true`** (domains, phones, sends, ad spend). Standing owner order.
+2. **DNS suggests, registrar decides.** Only `cf_check.registrable:true` is availability truth.
+3. **No address declared working without an EVP-1 receipt** (round-trip included).
+4. Every fix ships with a regression test + doc update in the same commit.
+
 ## Quick Start
 ```bash
 # Check a name
