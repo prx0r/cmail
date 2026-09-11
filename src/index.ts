@@ -77,18 +77,63 @@ async function processInbound(env: Env, m: InboundMsg): Promise<string> {
   return msgId;
 }
 
+export async function readRawText(raw: any, maxChars = 20000): Promise<string> {
+  // ForwardableEmailMessage.raw is a ReadableStream, NOT a Blob:
+  // .arrayBuffer() does not exist (proven live: every real inbound threw here).
+  if (!raw) return "";
+  try {
+    if (typeof raw.arrayBuffer === "function") {
+      return Buffer.from(await raw.arrayBuffer()).toString("utf-8").slice(0, maxChars);
+    }
+    if (typeof raw.getReader === "function") {
+      const reader = raw.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          const u8 = value instanceof Uint8Array ? value : new Uint8Array(value);
+          chunks.push(u8);
+          total += u8.byteLength;
+        }
+        if (total > 300000) break; // cap ~300KB raw
+      }
+      try { reader.releaseLock?.(); } catch { /* ignore */ }
+      const buf = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
+      return Buffer.from(buf).toString("utf-8").slice(0, maxChars);
+    }
+    if (typeof raw.text === "function") {
+      return String(await raw.text()).slice(0, maxChars);
+    }
+  } catch { /* fall through to empty */ }
+  return "";
+}
+
 export default {
   // ---- inbound: Internet → Email Routing → Worker ----
   async email(message: any, env: Env) {
-    const rawText = message.raw ? Buffer.from(await message.raw.arrayBuffer()).toString("utf-8").slice(0, 20000) : "";
-    await processInbound(env, {
-      to: message.to ?? "",
-      from: message.from ?? "unknown",
-      subject: message.headers?.get("subject") ?? "(no subject)",
-      rawText,
-      raw: message.raw ?? null,
-      waitUntil: (p: Promise<any>) => (message as any).waitUntil?.(p),
-    });
+    try {
+      const rawText = await readRawText(message.raw);
+      await processInbound(env, {
+        to: message.to ?? "",
+        from: message.from ?? "unknown",
+        subject: message.headers?.get("subject") ?? "(no subject)",
+        rawText,
+        raw: message.raw ?? null,
+        waitUntil: (p: Promise<any>) => (message as any).waitUntil?.(p),
+      });
+    } catch (e: any) {
+      // Never lose mail silently: audit trail first, then rethrow so the
+      // edge retries/bounces visibly instead of black-holing.
+      try {
+        await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
+          .bind("email-worker", "inbound_failed", String(message?.to ?? ""), String(e?.message ?? e).slice(0, 300)).run();
+      } catch { /* D1 itself down — nothing left to write to */ }
+      throw e;
+    }
   },
 
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
