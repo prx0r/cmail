@@ -1,0 +1,3 @@
+59 route2.mx.cloudflare.net.
+60 route1.mx.cloudflare.net.
+78 route3.mx.cloudflare.net.
