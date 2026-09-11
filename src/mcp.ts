@@ -140,7 +140,16 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       const names = Array.isArray(args.names) ? args.names.map((n: any) => String(n ?? "")) : [];
       if (!names.length) return Response.json({ error: "names[] required (max 100/call, page with offset)" }, { status: 400 });
       if (names.length > 100) return Response.json({ error: "max 100 names per call — page with offset" }, { status: 400 });
-      const report = await bulkCheck(names, args.rules ?? {});
+      // Registrar verifier when CF creds exist: the only path to confirmed available.
+      const cfEnv = env as any;
+      const canVerify = !!(cfEnv.CLOUDFLARE_API_TOKEN && cfEnv.CLOUDFLARE_ACCOUNT_ID);
+      const report = await bulkCheck(names, args.rules ?? {}, canVerify ? {
+        verify: async (d: string) => {
+          const c: any = await cfCheckDomain(d, cfEnv);
+          if (c && typeof c === 'object' && 'error' in c) throw new Error(String(c.error).slice(0, 120));
+          return !!c?.registrable;
+        },
+      } : undefined);
       let run_id: string | null = null;
       try {
         run_id = await bulkPersist(env as any, report);

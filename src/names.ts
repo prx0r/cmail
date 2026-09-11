@@ -36,31 +36,32 @@ export async function verifyDomain(domain: string): Promise<VerifyResult> {
     buy_url: CLOUDFLARE_BUY_LINK(domain),
   };
 
-  // DNS probe — check for NXDOMAIN (domain doesn't exist = available)
+  // DNS probe — NXDOMAIN is a WEAK signal, never a verdict on its own:
+  // registered-but-undelegated domains (no nameservers) also return NXDOMAIN
+  // (proven live: christina.co.uk, marlyn.co.uk NXDOMAIN yet registrar-taken).
+  let dnsNxdomain = false;
   try {
     const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${domain}&type=A`, {
       headers: { 'Accept': 'application/dns-json' },
     });
     const data: any = await r.json();
     const status = data.Status;
-    // Status 3 = NXDOMAIN = domain does not exist = available
-    // Status 0 = NOERROR with Answer = domain has records = taken
-    // Status 0 = NOERROR with Authority only = possible CNAME/nxdomain ambiguity
+    // Status 3 = NXDOMAIN; Status 0 with Answer = has records.
     if (status === 3) {
-      // NXDOMAIN — domain definitely doesn't exist
+      dnsNxdomain = true;
       result.dns.records = [];
       result.dns.has_records = false;
-      result.registration = { status: 'available', confidence: 'high' };
-      return result; // RDAP can override, but NXDOMAIN is strong signal
+    } else {
+      result.dns.records = data.Answer || [];
+      result.dns.has_records = result.dns.records.length > 0;
     }
-    result.dns.records = data.Answer || [];
-    result.dns.has_records = result.dns.records.length > 0;
   } catch (e: any) {
     result.dns.error = e.message;
   }
 
-  // RDAP check — follow redirects, handle 302→404 chains
+  // RDAP check — authoritative where a server exists. Always runs (no early return).
   const base = RDAP_SERVERS[tld];
+  let rdapAnswered = false;
   if (base) {
     try {
       const r = await fetch(base + domain, { redirect: 'follow' });
@@ -76,18 +77,24 @@ export async function verifyDomain(domain: string): Promise<VerifyResult> {
           expires: expires?.eventDate,
           confidence: 'high',
         };
+        rdapAnswered = true;
       } else if (r.status === 404) {
         result.registration = { status: 'available', confidence: 'high' };
+        rdapAnswered = true;
       }
-      // Other statuses (429, 500, etc.) — keep whatever DNS said
+      // Other statuses (429, 500, etc.) — fall through to DNS fallback below.
     } catch (e: any) {
       result.registration.error = e.message;
     }
-  } else {
-    // No RDAP server — trust DNS heuristic
-    if (result.registration.status !== 'available') {
-      result.registration.status = result.dns.has_records ? 'taken' : 'unknown';
-      result.registration.confidence = result.dns.has_records ? 'medium' : 'low';
+  }
+  if (!rdapAnswered) {
+    // No RDAP corroboration: DNS alone can only suggest, never confirm free.
+    if (result.dns.has_records) {
+      result.registration.status = 'taken';
+      result.registration.confidence = 'medium';
+    } else {
+      result.registration.status = 'unknown';
+      result.registration.confidence = 'low';
     }
   }
 
@@ -728,6 +735,7 @@ export interface BulkRules {
   min_confidence?: 'low' | 'medium' | 'high'; // default 'medium': drop weaker verdicts
   max_names?: number;       // default 50, hard cap 100/call (worker subrequest budget); page with offset
   offset?: number;          // default 0
+  verify_hits?: boolean;    // default true: confirm non-taken hits via registrar verifier when one is provided
 }
 
 export interface BulkHit {
@@ -787,13 +795,19 @@ export function rulesHash(rules: BulkRules): string {
     allow_digits: rules.allow_digits ?? false,
     min_vowel_ratio: rules.min_vowel_ratio ?? 0.2,
     min_confidence: rules.min_confidence ?? 'medium',
+    verify_hits: rules.verify_hits ?? true,
   };
   return 'rules_' + fnv1a(JSON.stringify(norm));
 }
 
 const CONF_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
 
-export async function bulkCheck(rawNames: string[], rules?: BulkRules): Promise<BulkReport> {
+export interface BulkVerify {
+  // Registrar truth: true = registrable. Throw = indeterminate (keep DNS verdict).
+  verify?: (domain: string) => Promise<boolean>;
+}
+
+export async function bulkCheck(rawNames: string[], rules?: BulkRules, opts?: BulkVerify): Promise<BulkReport> {
   const r: Required<Omit<BulkRules, 'offset'>> & { offset: number } = {
     tlds: rules?.tlds?.length ? rules.tlds.map(t => t.toLowerCase()) : ['co.uk'],
     max_len: rules?.max_len ?? 12,
@@ -803,6 +817,7 @@ export async function bulkCheck(rawNames: string[], rules?: BulkRules): Promise<
     min_confidence: rules?.min_confidence ?? 'medium',
     max_names: Math.min(rules?.max_names ?? 50, 100),
     offset: rules?.offset ?? 0,
+    verify_hits: rules?.verify_hits ?? true,
   };
   const clean = [...new Set(rawNames.map(n => String(n ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '')).filter(Boolean))];
   const page = clean.slice(r.offset, r.offset + r.max_names);
@@ -828,11 +843,28 @@ export async function bulkCheck(rawNames: string[], rules?: BulkRules): Promise<
       }
       try {
         const v = await verifyDomain(domain);
-        const ok = (CONF_RANK[v.registration.confidence] ?? 0) >= (CONF_RANK[r.min_confidence] ?? 1);
+        let status = v.registration.status;
+        let confidence = v.registration.confidence;
+        // Registrar verification: the only path from non-taken to confirmed available.
+        // Without it, DNS-only unknowns stay unknown (registered-undelegated lesson).
+        if (status !== 'taken' && r.verify_hits && opts?.verify) {
+          try {
+            if (await opts.verify(domain)) {
+              status = 'available';
+              confidence = 'high';
+            } else {
+              status = 'taken';
+              confidence = 'high';
+            }
+          } catch {
+            // Verifier indeterminate — keep the DNS verdict as-is.
+          }
+        }
+        const ok = (CONF_RANK[confidence] ?? 0) >= (CONF_RANK[r.min_confidence] ?? 1);
         hits.push({
           domain,
-          status: ok ? v.registration.status : 'unknown',
-          confidence: v.registration.confidence,
+          status: ok ? status : 'unknown',
+          confidence,
           structural, van, combined,
           buy_url: v.buy_url,
         });

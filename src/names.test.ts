@@ -77,4 +77,27 @@ describe("beast mode scoring (steals domainarena structural formula)", () => {
     expect(report.hits.every(h => typeof h.combined === "number")).toBe(true);
     expect(typeof report.hit_rate).toBe("number");
   }, 30000);
+  it("never reports available on DNS alone without RDAP", async () => {
+    // Regression: christina.co.uk + marlyn.co.uk NXDOMAIN yet registrar-taken.
+    for (const d of ["christina.co.uk", "marlyn.co.uk"]) {
+      const r = await verifyDomain(d);
+      expect(r.registration.status).not.toBe("available");
+    }
+  }, 30000);
+  it("verifier promotes unknowns and demotes mirages", async () => {
+    const verify = async (d: string) => d === "maybefree.co.uk";
+    const report = await bulkCheck(["maybefree", "mirage"], { tlds: ["co.uk"] }, { verify });
+    const domains = report.hits.map(h => h.domain);
+    expect(domains).toContain("maybefree.co.uk");
+    expect(domains).not.toContain("mirage.co.uk");
+    expect(report.summary.taken).toBe(1);
+  }, 30000);
+  it("verify_hits:false skips the verifier", async () => {
+    let calls = 0;
+    const report = await bulkCheck(["malorie"], { tlds: ["co.uk"], verify_hits: false }, {
+      verify: async () => { calls++; return true; },
+    });
+    expect(calls).toBe(0);
+    expect(report.checked).toBe(1);
+  }, 30000);
 });
