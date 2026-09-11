@@ -23,10 +23,19 @@
 ## Resolved this session
 
 - **Root cause found:** zone `misconfigured/locked` — SPF pointed only at
-  `zoho.eu`, Cloudflare required its own include. Fixed additively
+  `zoho.eu`, Cloudflare wants `include:_spf.mx.cloudflare.net`. Fixed additively
   (`include:zoho.eu include:_spf.mx.cloudflare.net`), status now `ready`.
-- **Mailbox registered**, routing rules + catch-all verified enabled.
-- Worker deployment current (2026-09-10); email handler writes unconditionally.
+- Mailbox registered, routing rules + catch-all verified enabled.
+- **Bug 1 (killed 2026-09-11, deployed):** `email()` called
+  `message.raw.arrayBuffer()` — but `ForwardableEmailMessage.raw` is a
+  `ReadableStream` per the official interface. Every real inbound threw before
+  storage. Test-ingested mail (`raw:null`) bypassed it, hiding the bug.
+- **Bug 2 (killed 2026-09-11, deployed v3c3a4ed3):** first fix read the stream
+  for text, then passed the consumed stream to R2 → `ReadableStream disturbed`.
+  Fix: single read into bytes (`readRawBytes`); text + R2 both derive from it.
+  Rule: **touch `message.raw` exactly once per invocation.**
+- Docs-confirmed limits: inbound ≤25 MiB (109KB ZIP fine); Free-plan CPU can
+  also kill complex handlers (watch for EXCEEDED_CPU, distinct from TypeErrors).
 
 ## Inbound debug protocol (use before blaming anyone)
 
