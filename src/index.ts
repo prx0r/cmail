@@ -77,13 +77,15 @@ async function processInbound(env: Env, m: InboundMsg): Promise<string> {
   return msgId;
 }
 
-export async function readRawText(raw: any, maxChars = 20000): Promise<string> {
-  // ForwardableEmailMessage.raw is a ReadableStream, NOT a Blob:
-  // .arrayBuffer() does not exist (proven live: every real inbound threw here).
-  if (!raw) return "";
+export async function readRawBytes(raw: any, maxBytes = 300000): Promise<Uint8Array | null> {
+  // Read the stream EXACTLY ONCE. A consumed stream passed anywhere else
+  // throws "disturbed" (proven live in tail). Callers derive text AND storage
+  // bytes from this single read — never touch message.raw again afterwards.
+  if (!raw) return null;
   try {
     if (typeof raw.arrayBuffer === "function") {
-      return Buffer.from(await raw.arrayBuffer()).toString("utf-8").slice(0, maxChars);
+      const buf = new Uint8Array(await raw.arrayBuffer());
+      return buf.slice(0, maxBytes);
     }
     if (typeof raw.getReader === "function") {
       const reader = raw.getReader();
@@ -97,32 +99,43 @@ export async function readRawText(raw: any, maxChars = 20000): Promise<string> {
           chunks.push(u8);
           total += u8.byteLength;
         }
-        if (total > 300000) break; // cap ~300KB raw
+        if (total > maxBytes) break;
       }
       try { reader.releaseLock?.(); } catch { /* ignore */ }
       const buf = new Uint8Array(total);
       let off = 0;
       for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
-      return Buffer.from(buf).toString("utf-8").slice(0, maxChars);
+      return buf;
     }
     if (typeof raw.text === "function") {
-      return String(await raw.text()).slice(0, maxChars);
+      return new TextEncoder().encode(String(await raw.text()));
     }
-  } catch { /* fall through to empty */ }
-  return "";
+  } catch { /* fall through to null */ }
+  return null;
+}
+
+export async function readRawText(raw: any, maxChars = 20000): Promise<string> {
+  // ForwardableEmailMessage.raw is a ReadableStream, NOT a Blob:
+  // .arrayBuffer() does not exist (proven live: every real inbound threw here).
+  const bytes = await readRawBytes(raw);
+  if (!bytes) return "";
+  return Buffer.from(bytes).toString("utf-8").slice(0, maxChars);
 }
 
 export default {
   // ---- inbound: Internet → Email Routing → Worker ----
   async email(message: any, env: Env) {
     try {
-      const rawText = await readRawText(message.raw);
+      // Single read: bytes feed BOTH the text snippet AND R2 storage.
+      // Passing message.raw onward after reading would throw "disturbed".
+      const rawBytes = await readRawBytes(message.raw);
+      const rawText = rawBytes ? Buffer.from(rawBytes).toString("utf-8").slice(0, 20000) : "";
       await processInbound(env, {
         to: message.to ?? "",
         from: message.from ?? "unknown",
         subject: message.headers?.get("subject") ?? "(no subject)",
         rawText,
-        raw: message.raw ?? null,
+        raw: rawBytes,
         waitUntil: (p: Promise<any>) => (message as any).waitUntil?.(p),
       });
     } catch (e: any) {

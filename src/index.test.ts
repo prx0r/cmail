@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readRawText } from "./index";
+import { readRawText, readRawBytes } from "./index";
 
 function fakeStream(chunks: string[]) {
   const enc = new TextEncoder();
@@ -33,5 +33,12 @@ describe("readRawText (email() raw handling)", () => {
   it("never throws on hostile input", async () => {
     expect(await readRawText({ getReader: () => { throw new Error("boom"); } } as any)).toBe("");
     expect(await readRawText(42 as any)).toBe("");
+  });
+  it("single-read rule: consumed/locked streams degrade to null, never throw", async () => {
+    const s = fakeStream(["abc"]) as any;
+    expect(await readRawBytes(s)).not.toBeNull();
+    const locked = { getReader() { throw new TypeError("disturbed"); } };
+    expect(await readRawBytes(locked as any)).toBeNull();
+    expect(await readRawText(locked as any)).toBe("");
   });
 });
