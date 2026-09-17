@@ -1,133 +1,157 @@
 ```
-  ╔═══════════════════════════════════╗
-  ║                                   ║
-  ║    ___    ____   ___              ║
-  ║   / _ \  / ___| / _ \             ║
-  ║  | | | || |  _ | | | |            ║
-  ║  | |_| || |_| || |_| |            ║
-  ║   \___/  \____| \___/             ║
-  ║                                   ║
-  ║   Agent Commerce Protocol         ║
-  ║                                   ║
-  ╚═══════════════════════════════════╝
+  ╔═══════════════════════════════════════════════════════════╗
+  ║                                                           ║
+  ║   setup.social — Agent Operating Manual                   ║
+  ║                                                           ║
+  ╚═══════════════════════════════════════════════════════════╝
 ```
 
 ## What This Is
-Autonomous name acquisition pipeline. Agent types a name → sees domains + handles → buys domain → wires email → signs up for accounts.
 
-## Start here (docs map)
-- **[GUIDE.md](GUIDE.md)** — Complete journey from name to working email
-- Tool surface: `docs/MCP_REFERENCE.md` (all 34 tools — read before calling anything unfamiliar)
-- Domains: `docs/DOMAINS.md` (buying flow, registrar-truth law, naming science)
-- Socials: `docs/SOCIALS.md` · Phone: `docs/PHONE.md`
-- Verification: `docs/EMAIL_VERIFICATION.md` (EVP-1) · Failures: `docs/TROUBLESHOOTING.md`
-- History, not guidance: `archive/` · Session gold: `a-logs/`
+Autonomous social identity pipeline. Seed name → handle check → domain → email → all socials. Agent does everything. Human approves purchases.
 
-## Pricing (free tier vs paid)
+## How the System Works
 
-| Feature | Cost | Required? |
-|---------|------|-----------|
-| Inbound email receive | $0 | ✅ Yes |
-| Domain purchase | ~$10/yr | Only if buying domains |
-| Outbound email (send) | $5/mo Workers Paid | ❌ **Optional** |
+### The Dependency Chain
 
-**Outbound is optional.** Inbound works free. Only enable Workers Paid ($5/mo, 3k sends) if A-COM needs to SEND emails.
-
-## Standing laws
-1. **NEVER buy without explicit human `confirmed:true`** (domains, phones, sends, ad spend). Standing owner order.
-2. **DNS suggests, registrar decides.** Only `cf_check.registrable:true` is availability truth.
-3. **No address declared working without an EVP-1 receipt** (round-trip included).
-4. Every fix ships with a regression test + doc update in the same commit.
-
-## Quick Start
-```bash
-# Check a name
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.search","args":{"name":"hamtask"}}'
-
-# Check socials
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.social","args":{"name":"hamtask"}}'
-
-# Preview purchase
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.cf_purchase","args":{"domain":"hamtask.com"}}'
+```
+Step 1: 👤 BUY DOMAIN (human: "BUY {domain}")
+  ↓ capacity: have_domain
+Step 2: 🟢 EMAIL + 👤 PHONE (parallel)
+  ↓ capacity: receive_email, have_phone
+Step 3: 🟢 ALL SOCIALS (parallel)
+  ↓ capacity: have_handle:*
 ```
 
-## 34 MCP Tools
+**Critical:** Steps 2-3 are PARALLEL. Once email + phone exist, ALL socials unlock simultaneously.
 
-### Domain (7)
-- `name.verify_domain` — DNS + RDAP deep check
-- `name.check` — Multi-TLD availability (10 TLDs)
-- `name.search` — Pricing from 4 registrars (15 TLDs)
-- `check_availability` — Domain Hunter RDAP (1208 TLDs)
-- `cf_check_domain` — Cloudflare Registrar price
-- `cf_purchase_domain` — Buy via Cloudflare (confirmed:true)
-- `cf_wire_email` — Wire email routing (confirmed:true)
+### The QP Proof System
 
-### Social (2)
-- `name.check_handles` — 9 platforms (GitHub, X, YouTube, TikTok, npm, PyPI, crates + Apify)
-- `name.social` — Handles + suggestions for taken platforms
+Every capacity produces a QP receipt — deterministic, verifiable, append-only.
 
-### Phone (2)
-- `name.phone_search` — Telnyx number search ✅
-- `name.read_sms` — Read received SMS ✅
+```
+CAPACITY: have_domain(privately.win)
+  EVIDENCE: dig MX + CF zone API
+  GATES: [dns_valid_v1, cf_zone_active_v1]
+  PROOF_LEVEL: V7
+  → GRANT: receive_email(*@privately.win)
 
-### Email (6)
-- email.list_domains, email.inbox, email.search, email.read, email.draft, email.send
+CAPACITY: receive_email(agents@privately.win)
+  EVIDENCE: verify-capacity.sh (7 layers)
+  GATES: [email_infrastructure_v1, routing_catchall_v1, worker_live_v1, mailbox_indexed_v1]
+  PROOF_LEVEL: V7
+  → GRANT: can_signup_service(agents@privately.win, *)
+```
 
-### Domain Hunter (5)
-- check_availability, get_prices, generate_names, find_domains, list_zones
+**No self-promotion.** Only gates decide truth. Receipts are the sole path from UNKNOWN → ACTIVE.
 
-### Namecheap (6)
-- namecheap_list_domains, namecheap_check_domain, namecheap_get_tld_pricing, namecheap_register_domain, namecheap_get/set_dns_hosts, set_nameservers
+### The Target System
 
-### Tasks (5) + Pipeline (2)
-- task.create, task.list, task.get, task.deliver, task.complete
-- pipeline.start, pipeline.status
+Each platform is a JSON file in `targets/`. The agent reads these to know what to do.
 
-## Social Platforms
+```
+targets/
+  domain.json       → Cloudflare domain purchase (human gate)
+  email.json        → Cloudflare Email Routing (full auto)
+  phone.json        → Telnyx phone number (human gate)
+  bluesky.json      → AT Protocol (full auto, no captcha)
+  youtube.json      → Google OAuth + Data API v3 (captcha possible)
+  instagram.json    → Meta Business → Graph API (captcha likely)
+  facebook.json     → Meta bundle (unlocked via Instagram)
+  whatsapp.json     → Meta bundle + phone
+  x.json            → X API v2 (captcha possible)
+  tiktok.json       → Content Posting API (complex captcha)
+  _template.json    → Copy to add new platforms
+```
 
-| Platform | Method | Cost |
-|----------|--------|------|
-| GitHub | REST API | $0 |
-| X | Page fetch | $0 |
-| YouTube | Page fetch | $0 |
-| TikTok | Page fetch | $0 |
-| npm | Registry API | $0 |
-| PyPI | JSON API | $0 |
-| crates.io | API | $0 |
-| Snapchat | Apify | $0.006 |
-| Bluesky | Apify | $0.006 |
-| Telegram | Apify | $0.006 |
-| GitLab | Apify | $0.006 |
-| SoundCloud | Apify | $0.006 |
-| Pinterest | Apify | $0.006 |
-| Instagram | Manual | — |
-| Facebook | Manual | — |
-| Threads | Manual | — |
-| Reddit | Manual | — |
-| Twitch | Manual | — |
+### Autonomy Rules
+
+| Class | Behavior |
+|-------|----------|
+| 🟢 Agent Guaranteed | No captcha, direct API — agent does it |
+| 🟡 Agent Or Human | Captcha possible — agent tries, pauses on captcha |
+| 👤 Human Gate | Purchase — human types confirm text |
+
+**Captcha rule:** Agent NEVER tries to solve captcha. If captcha appears → pause → notify human → human completes → agent resumes.
+
+## Standing Laws
+
+1. **NEVER buy without explicit human `confirmed:true`** — domains, phones, sends.
+2. **DNS suggests, registrar decides.** Only `cf_check.registrable:true` is truth.
+3. **No claims without proof.** Every capacity needs a QP receipt.
+4. **Secrets stay safe.** Keys in vault. Never in code.
+5. **Agent attempts, human fallback.** Captcha → pause → notify.
+6. **Parallel after infrastructure.** Email + phone unlock everything at once.
+
+## Costs
+
+| Item | Cost | Required? |
+|------|------|-----------|
+| Domain | $2-10/yr | Yes (Cloudflare at-cost) |
+| Phone | $1/mo | Only for X/TikTok/YouTube SMS verify |
+| Email | FREE | Cloudflare Email Routing |
+| All socials | FREE | — |
+| **Minimum** | **~$14/yr** | domain + phone |
+| **Without phone** | **~$2/yr** | domain only (Bluesky + npm) |
+
+## The Chain in Code
+
+```typescript
+// 1. Load targets
+import { loadAllTargets, resolveLayers } from './src/targets';
+const layers = resolveLayers(['target:domain', 'target:email', 'target:phone', 'target:youtube', 'target:instagram', 'target:tiktok', 'target:x']);
+// → [['target:domain'], ['target:email', 'target:phone'], ['target:youtube', 'target:instagram', 'target:tiktok', 'target:x']]
+
+// 2. Check handle availability
+import { findUniversalHandle } from './src/social-rules';
+const best = findUniversalHandle(['mxthartist', 'mxthart']);
+// → { handle: 'mxthartist', valid_on: ALL_PLATFORMS }
+
+// 3. Verify capacity
+bash scripts/verify-capacity.sh privately.win agents@privately.win
+// → VERDICT: CERTIFIED (7/7 layers green)
+
+// 4. Run identity check
+bash scripts/check-identity.sh privatelywin privately.win
+// → Apify: 11 available, Format: 10/10 valid, Domain: $4.18/yr
+```
 
 ## Secrets (agent-vault oracle)
+
 ```
-CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_WORKERS_TOKEN,
-CLOUDFLARE_REGISTRAR_TOKEN, APIFY_TOKEN, TELNYX_API_KEY
+CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+APIFY_TOKEN, TELNYX_API_KEY
+GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
+META_APP_ID, META_APP_SECRET, META_ACCESS_TOKEN
+TIKTOK_CLIENT_KEY, TIKTKOK_CLIENT_SECRET
+X_CLIENT_ID, X_CLIENT_SECRET, X_BEARER_TOKEN
 ```
 
 ## Key Files
-- `GUIDE.md` — **Start here** — complete journey
-- `src/names.ts` — Domain + handle + purchase + phone logic (684 lines)
-- `src/mcp.ts` — 34 MCP tools
-- `docs/MCP_REFERENCE.md` — All tools reference
-- `docs/DOMAINS.md` — Buying flow
-- `docs/SOCIALS.md` — Handle checking
-- `docs/EMAIL_VERIFICATION.md` — 9-layer verification
-- `docs/TROUBLESHOOTING.md` — Every failure class + fix
+
+| File | Purpose |
+|------|---------|
+| `targets/*.json` | Platform definitions (11 targets) |
+| `src/targets.ts` | Dependency resolver + cost calculator |
+| `src/verifiers.ts` | QP gate verifiers (pure functions) |
+| `src/capacity.ts` | Capacity registry + proof generation |
+| `src/social-rules.ts` | Per-platform username rules |
+| `scripts/verify-capacity.sh` | 7-layer infrastructure proof |
+| `scripts/check-identity.sh` | Handle check (Apify + format + domain) |
+| `docs/API-REFERENCE.md` | YouTube, Instagram, TikTok, X API docs |
+| `docs/API-SETUP-PATHS.md` | Exact setup steps per platform |
+| `SPEC-QP-FULL-CHAIN.md` | Full dependency grid + QP formalism |
+| `examples/*.md` | Complete walkthrough examples |
 
 ## Deployed
-- A-COM MCP: https://cmail.tradesprior.workers.dev/mcp
-- Dashboard: https://cmail.tradesprior.workers.dev/ui/
+
+- **Worker:** `https://cmail.tradesprior.workers.dev`
+- **MCP:** `https://cmail.tradesprior.workers.dev/mcp`
+- **Dashboard:** `https://cmail.tradesprior.workers.dev/ui/`
+
+## Extending the System
+
+Add a new platform = copy `targets/_template.json`, fill in blanks. Agent picks it up automatically.
+
+The QP proof system validates it. The dependency grid incorporates it. The cost calculator includes it. No code changes needed.

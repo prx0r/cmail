@@ -1,103 +1,250 @@
 ```
-  ╔═══════════════════════════════════╗
-  ║                                   ║
-  ║    ___    ____   ___              ║
-  ║   / _ \  / ___| / _ \             ║
-  ║  | | | || |  _ | | | |            ║
-  ║  | |_| || |_| || |_| |            ║
-  ║   \___/  \____| \___/             ║
-  ║                                   ║
-  ║   Agent Commerce Protocol         ║
-  ║                                   ║
-  ╚═══════════════════════════════════╝
+  ╔═══════════════════════════════════════════════════════════╗
+  ║                                                           ║
+  ║   ███████╗██╗   ██╗███╗   ██╗██████╗ ███████╗███████╗   ║
+  ║   ██╔════╝██║   ██║████╗  ██║██╔══██╗██╔════╝██╔════╝   ║
+  ║   ███████╗██║   ██║██╔██╗ ██║██║  ██║█████╗  ███████╗   ║
+  ║   ╚════██║██║   ██║██║╚██╗██║██║  ██║██╔══╝  ╚════██║   ║
+  ║   ███████║╚██████╔╝██║ ╚████║██████╔╝███████╗███████║   ║
+  ║   ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═════╝ ╚══════╝╚══════╝ ║
+  ║                                                           ║
+  ║   setup.social — Autonomous Social Identity Pipeline      ║
+  ║                                                           ║
+  ╚═══════════════════════════════════════════════════════════╝
 ```
 
-**From name idea to working email in 20 minutes.**
+**From seed name to full digital presence. Agent does everything. Human approves purchases.**
 
-A-COM is the agent's business in a box. Pick a name, check the handles, buy the domain, wire the email — all through one API. No dashboards. No clicks. Just code.
+Pick a name → check handles across all platforms → buy domain → wire email → signup YouTube, Instagram, TikTok, X → done. ~$14/yr. ~30 minutes.
 
 ---
 
-## Start Here
+## How It Works
 
-📖 **[GUIDE.md](GUIDE.md)** — The complete journey from name to working email.
+```
+SEED NAME → HANDLE CHECK → DOMAIN → EMAIL → ALL SOCIALS (parallel)
+   │            │            │        │            │
+   │            │            │        │            ├─ 🟢 YouTube (Google API)
+   │            │            │        │            ├─ 🟢 Instagram (Meta Graph API)
+   │            │            │        │            ├─ 🟢 TikTok (Content Posting API)
+   │            │            │        │            ├─ 🟢 X (API v2)
+   │            │            │        │            ├─ 🟢 Facebook (Meta bundle)
+   │            │            │        │            └─ 🟢 WhatsApp (Meta bundle + phone)
+   │            │            │        │
+   │            │            │        └─ 🟢 FREE (Cloudflare Email Routing)
+   │            │            │
+   │            │            └─ 👤 HUMAN: "BUY {domain}" (~$2-10/yr)
+   │            │
+   │            └─ Apify check (15 platforms) + format validation (10 platforms)
+   │
+   └─ Human provides seed: "mxthart" → agent finds "mxthartist" works everywhere
+```
 
-Everything else is reference.
+### The Dependency Chain
+
+```
+Step 1: 👤 BUY DOMAIN (human approves)
+   ↓
+Step 2: 🟢 EMAIL + 👤 PHONE (parallel)
+   ↓
+Step 3: 🟢 ALL SOCIALS (parallel)
+   ├─ Bluesky (API, no captcha)
+   ├─ YouTube (Playwright, captcha possible)
+   ├─ Instagram (Playwright, captcha likely)
+   ├─ TikTok (Playwright, complex captcha)
+   ├─ X (Playwright, captcha possible)
+   ├─ Facebook (Meta bundle via Instagram)
+   └─ WhatsApp (Meta bundle + phone)
+```
+
+**Human touches 2 things:** domain purchase + phone purchase. Everything else is agent.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Find a name
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.search","args":{"name":"sparky"}}'
+# Check a handle across all platforms
+bash scripts/check-identity.sh mxthartist
 
-# 2. Check handles
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.social","args":{"name":"sparky"}}'
+# Check with domain
+bash scripts/check-identity.sh privatelywin privately.win
 
-# 3. Buy domain
+# Run the full pipeline
 curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.cf_purchase","args":{"domain":"sparky.co","confirmed":true,"confirm_text":"BUY sparky.co"}}'
-
-# 4. Wire email
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"name.wire_email","args":{"domain":"sparky.co","confirmed":true}}'
-
-# 5. Read inbox
-curl -X POST https://cmail.tradesprior.workers.dev/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool":"email.inbox","args":{"mailbox":"hello@sparky.co"}}'
+  -d '{"tool":"pipeline.start","args":{"name":"mxthartist"}}'
 ```
 
 ---
 
-## Pricing
+## Cost
 
-| What | Cost | When |
-|------|------|------|
-| Name search | $0 | Always |
-| Handle check | $0 | Always |
-| Domain | ~$10/yr | Once |
-| Email receive | $0 | Always |
-| Email send | $5/mo | Only if you need outbound |
-
-**Inbound is free.** Outbound is optional.
+| Item | Cost | Notes |
+|------|------|-------|
+| Domain | $2-10/yr | Cloudflare at-cost |
+| Phone | $1/mo | Telnyx (for SMS verification) |
+| Email | FREE | Cloudflare Email Routing |
+| YouTube | FREE | Data API v3 (10k units/day) |
+| Instagram | FREE | Graph API via Meta Business |
+| TikTok | FREE | Content Posting API |
+| X | FREE | API v2 (50 tweets/mo write) |
+| **Total** | **~$14/yr** | |
 
 ---
 
 ## Architecture
 
 ```
-Internet → Cloudflare Email Routing → A-COM Worker → D1 + R2
-                                                   ↓
-                                             MCP API (34 tools)
-                                                   ↓
-                                             Dashboard (/ui/)
+┌─────────────────────────────────────────────────────────┐
+│                    setup.social                          │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  TARGETS (targets/*.json)                                │
+│  ├─ domain.json        — Cloudflare domain purchase      │
+│  ├─ email.json         — Cloudflare Email Routing        │
+│  ├─ phone.json         — Telnyx phone number             │
+│  ├─ bluesky.json       — AT Protocol (full auto)         │
+│  ├─ youtube.json       — Google OAuth + Data API v3      │
+│  ├─ instagram.json     — Meta Business → Graph API       │
+│  ├─ facebook.json      — Meta bundle                     │
+│  ├─ whatsapp.json      — Meta bundle + phone             │
+│  ├─ x.json             — X API v2                        │
+│  ├─ tiktok.json        — Content Posting API             │
+│  └─ _template.json     — Copy to add new platforms       │
+│                                                          │
+│  RUNTIME (src/)                                          │
+│  ├─ targets.ts         — Dependency resolver + costs     │
+│  ├─ verifiers.ts       — QP gate verifiers               │
+│  ├─ capacity.ts        — Capacity registry + proofs      │
+│  └─ social-rules.ts    — Per-platform username rules     │
+│                                                          │
+│  PROOFS (scripts/)                                       │
+│  ├─ verify-capacity.sh — 7-layer infrastructure proof    │
+│  └─ check-identity.sh  — Handle check (Apify + format)  │
+│                                                          │
+│  INFRASTRUCTURE                                          │
+│  ├─ Cloudflare Registrar — domain purchase               │
+│  ├─ Cloudflare Email Routing — email receive             │
+│  ├─ cmail Worker — email processing + MCP API            │
+│  ├─ Telnyx — phone numbers + SMS                         │
+│  └─ Apify — social handle checking                       │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**Live:** `https://cmail.tradesprior.workers.dev`
-**D1:** `cmail-index` | **R2:** `cmail-raw`
+---
+
+## The Capacity Chain (QP Proofs)
+
+Every step produces a **QP proof** — a deterministic, verifiable record that a capacity is ACTIVE.
+
+```
+CAPACITY: have_domain(privately.win)
+  PROOF: MX records + CF zone API → all green
+  GATES: [dns_valid_v1, cf_zone_active_v1]
+  → GRANT: receive_email(*@privately.win)
+
+CAPACITY: receive_email(agents@privately.win)
+  PROOF: verify-capacity.sh → 7/7 layers green
+  GATES: [email_infrastructure_v1, routing_catchall_v1, worker_live_v1, mailbox_indexed_v1]
+  → GRANT: can_signup_service(agents@privately.win, *)
+
+CAPACITY: have_handle(youtube, @privatelywin)
+  PROOF: YouTube Data API v3 → channels.list returns data
+  GATES: [channel_created_v1, handle_owned_v1]
+  → GRANT: can_post(youtube, @privatelywin)
+```
+
+**No self-promotion.** Only gates decide truth. Receipts are the sole path from UNKNOWN → ACTIVE.
+
+See `SPEC-QP-CAPACITY-CHAIN.md` for the full QP formalism.
+
+---
+
+## Adding a New Platform
+
+Copy `targets/_template.json`, fill in the blanks:
+
+```json
+{
+  "id": "target:new_platform",
+  "name": "New Platform",
+  "captcha_risk": "medium",
+  "depends_on": ["target:email"],
+  "capabilities_granted": ["have_handle:new_platform"],
+  "tasks": [{
+    "id": "task:signup_new_platform",
+    "type": "agent_or_human",
+    "method": "playwright",
+    "captcha": true,
+    "captcha_action": "ESCALATE_TO_HUMAN",
+    "browser_action": {
+      "url": "https://platform.com/signup",
+      "steps": ["fill email", "fill password", "captcha? → pause"]
+    }
+  }]
+}
+```
+
+The agent picks it up automatically. The QP proof system validates it. The dependency grid incorporates it.
+
+See `examples/mxthartist-identity-flow.md` for a complete walkthrough.
+
+---
+
+## Per-Platform Rules
+
+| Platform | Max Length | Allowed Chars | Captcha |
+|----------|-----------|---------------|---------|
+| Instagram | 30 | `a-z0-9._` | High |
+| YouTube | 30 | `a-zA-Z0-9._-` | Medium |
+| TikTok | 24 | `a-zA-Z0-9._` | High |
+| X | 15 | `a-zA-Z0-9_` | Medium |
+| Bluesky | 18 | `a-zA-Z0-9-` | None |
+| Facebook | 50 | `a-zA-Z0-9.` | Medium |
+| WhatsApp | 25 | `a-zA-Z0-9 .-` | Low |
+| Twitch | 25 | `a-zA-Z0-9_` | Low |
+| Snapchat | 15 | `a-zA-Z0-9_-` | Medium |
+| Telegram | 32 | `a-zA-Z0-9_` | Low |
+
+See `src/social-rules.ts` for validation logic.
+
+---
+
+## API Setup
+
+Each platform requires a one-time setup (~40 min total):
+
+| Platform | Setup Time | What Human Does |
+|----------|-----------|----------------|
+| YouTube | ~5 min | Create Google Cloud project + OAuth creds |
+| Instagram | ~15 min | Create Meta Business + FB App + link IG |
+| TikTok | ~10 min | Create developer account + app |
+| X | ~10 min | Create developer account + project + app |
+
+After setup, agent handles everything autonomously.
+
+See `docs/API-SETUP-PATHS.md` for exact steps.
 
 ---
 
 ## Documentation
 
-| Doc | What It Covers |
-|-----|----------------|
-| [GUIDE.md](GUIDE.md) | **Start here** — complete journey from name to email |
-| [docs/MCP_REFERENCE.md](docs/MCP_REFERENCE.md) | All 34 tools: args, permissions, examples |
-| [docs/DOMAINS.md](docs/DOMAINS.md) | Buying flow, registrar truth, naming science |
-| [docs/SOCIALS.md](docs/SOCIALS.md) | Handle checking, signup automation |
-| [docs/EMAIL_VERIFICATION.md](docs/EMAIL_VERIFICATION.md) | 9-layer verification protocol |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Every failure class + fix |
-| [RECIPE.md](RECIPE.md) | Quick recipe: domain + email |
-| [AGENTS.md](AGENTS.md) | Operating manual + standing laws |
+| Doc | Purpose |
+|-----|---------|
+| **[GUIDE.md](GUIDE.md)** | Complete journey from name to email |
+| **[docs/API-REFERENCE.md](docs/API-REFERENCE.md)** | YouTube, Instagram, TikTok, X API docs |
+| **[docs/API-SETUP-PATHS.md](docs/API-SETUP-PATHS.md)** | Exact setup steps for each platform |
+| **[docs/MCP_REFERENCE.md](docs/MCP_REFERENCE.md)** | All 34 MCP tools |
+| **[docs/EMAIL_VERIFICATION.md](docs/EMAIL_VERIFICATION.md)** | 9-layer email verification |
+| **[SPEC-CAPACITY-CHAIN.md](SPEC-CAPACITY-CHAIN.md)** | Capacity chain specification |
+| **[SPEC-QP-CAPACITY-CHAIN.md](SPEC-QP-CAPACITY-CHAIN.md)** | QP proof formalism |
+| **[SPEC-QP-FULL-CHAIN.md](SPEC-QP-FULL-CHAIN.md)** | Full dependency grid |
+| **[SPEC-RESOLUTION-ORDER.md](SPEC-RESOLUTION-ORDER.md)** | Parallel resolution flow |
+| **[examples/mxthartist-identity-flow.md](examples/mxthartist-identity-flow.md)** | Example: mxthartist |
+| **[examples/privatelywin-identity-flow.md](examples/privatelywin-identity-flow.md)** | Example: privatelywin |
+| **[vision.md](vision.md)** | Future extensions |
+| **[AGENTS.md](AGENTS.md)** | Operating manual for agents |
 
 ---
 
@@ -105,5 +252,15 @@ Internet → Cloudflare Email Routing → A-COM Worker → D1 + R2
 
 1. **Never buy without asking.** Every purchase needs `confirmed:true`.
 2. **DNS lies.** Only the registrar confirms availability.
-3. **No claims without proof.** Every working address has a verification receipt.
+3. **No claims without proof.** Every capacity has a QP receipt.
 4. **Secrets stay safe.** Keys in vault. Never in code.
+5. **Agent attempts, human fallback.** Captcha → pause → notify human.
+6. **Parallel after infrastructure.** Email + phone unlock everything at once.
+
+---
+
+## Live
+
+**Worker:** `https://cmail.tradesprior.workers.dev`
+**MCP:** `https://cmail.tradesprior.workers.dev/mcp`
+**Dashboard:** `https://cmail.tradesprior.workers.dev/ui/`
