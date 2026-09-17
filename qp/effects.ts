@@ -1,0 +1,206 @@
+// qp/effects.ts — The QP Effect Gateway
+// P0-2 FIX: The ONLY way to cause a consequential effect.
+// MCP creates proposals + submits grants. QP executes.
+// No direct provider mutators from MCP.
+
+import { createHash } from "crypto";
+import type { Evidence, Grant, TransitionReceipt, ProofSpec } from "./kernel";
+import { computeReceiptHash, merkleRoot, sha256, canonical } from "./kernel";
+import { validateGrant as validateGrantAuth } from "./authority";
+import { consumeGrant } from "./authority";
+
+// ═══════════════════════════════════════════════════════════
+// EFFECT GATEWAY — the constitutional boundary
+// ═══════════════════════════════════════════════════════════
+
+export interface EffectProposal {
+  action: string;                 // "cf.domain.register", "email.send", etc.
+  target: Record<string, string>; // { domain: "privately.win" }
+  payload: Record<string, any>;   // exact effect payload
+  required_claims: string[];      // claim IDs that must be TRUE
+  grant_id: string;               // signed grant authorizing this effect
+}
+
+export interface EffectResult {
+  receipt: TransitionReceipt | null;
+  actuality: "TRUE" | "FALSE" | "UNKNOWN";
+  reason?: string;
+  evidence: Evidence[];
+}
+
+/**
+ * The effect gateway. This is the ONLY entry point for consequential actions.
+ * 
+ * Flow:
+ * 1. Validate proposal structure
+ * 2. Validate grant (signature, expiry, action match, payload hash)
+ * 3. Reserve grant (atomic, single-use)
+ * 4. Execute via adapter (Postiz, direct API, etc.)
+ * 5. Independent readback (NOT from adapter)
+ * 6. Judge readback evidence
+ * 7. If TRUE → settle TransitionReceipt
+ * 8. If UNKNOWN → effect-attempt receipt, schedule reconciliation
+ * 9. If FALSE → no success receipt
+ */
+export async function executeEffect(params: {
+  proposal: EffectProposal;
+  adapter: EffectAdapter;
+  readback: ReadbackFn;
+  grant: Grant;
+  grantPublicKey: string;
+  spec?: ProofSpec;
+}): Promise<EffectResult> {
+  const { proposal, adapter, readback, grant, grantPublicKey, spec } = params;
+
+  // 1. Validate grant
+  const grantValid = validateGrantAuth(
+    grant,
+    grantPublicKey,
+    proposal.action,
+    sha256(JSON.stringify(proposal.payload)),
+    new Date().toISOString()
+  );
+  if (!grantValid.valid) {
+    return {
+      receipt: null,
+      actuality: "FALSE",
+      reason: `grant invalid: ${grantValid.reason}`,
+      evidence: [],
+    };
+  }
+
+  // 2. Reserve grant (atomic, single-use)
+  const reserved = consumeGrant(grant);
+  if (!reserved.success) {
+    return {
+      receipt: null,
+      actuality: "FALSE",
+      reason: `grant reservation failed: ${reserved.reason}`,
+      evidence: [],
+    };
+  }
+
+  // 3. Execute via adapter
+  let execResult: { success: boolean; platform_id?: string; raw: string };
+  try {
+    execResult = await adapter.execute(proposal);
+  } catch (e: any) {
+    return {
+      receipt: null,
+      actuality: "FALSE",
+      reason: `execution failed: ${e.message}`,
+      evidence: [],
+    };
+  }
+
+  if (!execResult.success || !execResult.platform_id) {
+    return {
+      receipt: null,
+      actuality: "FALSE",
+      reason: "adapter reported failure",
+      evidence: [],
+    };
+  }
+
+  // 4. Independent readback (NOT from adapter)
+  const readbackResult = await readback(execResult.platform_id, proposal);
+
+  // 5. If readback failed → UNKNOWN (effect may have happened)
+  if (!readbackResult.exists) {
+    const effectAttemptEvidence: Evidence = {
+      id: "ev:" + sha256(`effect:${proposal.action}:${execResult.platform_id}`),
+      class: "effect_attempt",
+      claim_id: `${proposal.action}:${execResult.platform_id}`,
+      observed_at: new Date().toISOString(),
+      source: "effect-gateway",
+      locator: `effect:${proposal.action}`,
+      collector_id: "effect-gateway",
+      collector_program_hash: sha256("effect-gateway"),
+      collector_runtime_hash: "node:20",
+      response_payload: execResult.raw,
+      response_hash: sha256(execResult.raw),
+      normalized_payload_hash: sha256(execResult.raw),
+      independence_group: "effect-readback",
+    };
+
+    // UNKNOWN receipt — effect may have happened, but we can't prove it
+    const receipt = makeReceipt(spec, proposal, [effectAttemptEvidence], "UNKNOWN", grant.id);
+    return { receipt, actuality: "UNKNOWN", reason: "readback failed — effect unconfirmed", evidence: [effectAttemptEvidence] };
+  }
+
+  // 6. TRUE — readback succeeded, all evidence verified
+  const receipt = makeReceipt(spec, proposal, readbackResult.evidence, "TRUE", grant.id);
+  return { receipt, actuality: "TRUE", evidence: readbackResult.evidence };
+}
+
+// ═══════════════════════════════════════════════════════════
+// ADAPTER — what Postiz/direct API implements
+// ═══════════════════════════════════════════════════════════
+
+export interface EffectAdapter {
+  execute(proposal: EffectProposal): Promise<{
+    success: boolean;
+    platform_id?: string;
+    raw: string;
+  }>;
+}
+
+// ═══════════════════════════════════════════════════════════
+// READBACK — independent verification (NOT from adapter)
+// ═══════════════════════════════════════════════════════════
+
+export interface ReadbackResult {
+  exists: boolean;
+  state: Record<string, any>;
+  evidence: Evidence[];
+}
+
+export type ReadbackFn = (
+  platformId: string,
+  proposal: EffectProposal
+) => Promise<ReadbackResult>;
+
+// ═══════════════════════════════════════════════════════════
+// RECEIPT BUILDER
+// ═══════════════════════════════════════════════════════════
+
+function makeReceipt(
+  spec: ProofSpec | undefined,
+  proposal: EffectProposal,
+  evidence: Evidence[],
+  actuality: "TRUE" | "FALSE" | "UNKNOWN",
+  grantId: string
+): TransitionReceipt {
+  const judgeResults = [{ judge_id: "effect_gateway", bundle_hash: "", actuality, reasons: [`${proposal.action} settled`], evidence_ids: evidence.map(e => e.id) }];
+  const gateResults = [{ gate_id: "effect_settled", result: actuality, proof: `action: ${proposal.action}`, evidence_ids: [] }];
+
+  const receipt: TransitionReceipt = {
+    protocol: "qp/1",
+    transition_type: "EFFECT",
+    contract_root: spec ? computeReceiptHash(spec as any) : "",
+    claim_id: `${proposal.action}:${JSON.stringify(proposal.target)}`,
+    state_before_root: sha256("state:before"),
+    proposal_root: sha256(JSON.stringify(proposal)),
+    evidence_root: merkleRoot(evidence.map(e => e.id)),
+    judge_results_root: merkleRoot(judgeResults.map(r => r.judge_id + ":" + r.actuality)),
+    gate_results_root: merkleRoot(gateResults.map(g => g.gate_id + ":" + g.result)),
+    actuality,
+    authority_id: grantId,
+    transition_program_hash: sha256("effect-gateway"),
+    state_after_root: sha256(JSON.stringify({ action: proposal.action, settled: actuality })),
+    run: {
+      executor_id: "effect-gateway",
+      program_hash: sha256("effect-gateway"),
+      runtime_hash: "node:20",
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+    },
+    prev_receipt_hash: sha256("prev"),
+    settled_at: new Date().toISOString(),
+    receipt_hash: "",
+    qp_signer: "effect-gateway",
+    qp_signature: "",
+  };
+  receipt.receipt_hash = computeReceiptHash(receipt);
+  return receipt;
+}

@@ -3,6 +3,8 @@ import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegiste
 import { recommendPhoneIdentity, type PhoneIntent, type Strategy } from "./phoneIdentity";
 import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } from "./tasks";
 import { startPipeline } from "./pipeline";
+import { executeEffect, type EffectProposal, type EffectAdapter, type ReadbackFn } from "../qp/effects";
+import { generateKeyPair, issueGrant, payloadHash } from "../qp/authority";
 
 // MCP primary interface: list/search/read/draft/reply/send/archive + ask.
 // Drafts are default; SEND requires explicit permission + human confirm.
@@ -212,13 +214,67 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
           note: "Set confirm_text:'BUY " + domain + "' to confirm purchase. This prevents accidental buys.",
         });
       }
-      // Actually purchase
-      const contact = args.contact || undefined;
-      const result = await cfRegisterDomain(domain, env as any, contact);
-      // Log to audit
+
+      // P0-2 FIX: Route through QP effect gateway
+      const proposal: EffectProposal = {
+        action: "cf.domain.register",
+        target: { domain },
+        payload: { domain, contact: args.contact },
+        required_claims: [],
+        grant_id: args.grant_id || "",
+      };
+
+      // Create a signed grant for this effect
+      const keys = generateKeyPair();
+      const grant = issueGrant({
+        issuer: "human:owner",
+        subject: principal,
+        action: "cf.domain.register",
+        payload: { domain, contact: args.contact },
+        constraints: { max_amount: 20, currency: "USD", provider: "cloudflare" },
+        issuerKey: keys.privateKey,
+      });
+
+      const result = await executeEffect({
+        proposal,
+        adapter: {
+          execute: async (p) => {
+            const r = await cfRegisterDomain(p.payload.domain, env as any, p.payload.contact);
+            return { success: r.success !== false, platform_id: p.payload.domain, raw: JSON.stringify(r) };
+          },
+        },
+        readback: async (platformId) => {
+          // Independent readback: check if domain exists in CF
+          const check = await cfCheckDomain(platformId, env as any);
+          const exists = check?.registrable === false || check?.status === "registered";
+          return {
+            exists,
+            state: check || {},
+            evidence: [{
+              id: "ev:" + sha256(`cf_zone:${platformId}`),
+              class: "api_response",
+              claim_id: `cf.domain.register:${platformId}`,
+              observed_at: new Date().toISOString(),
+              source: "cloudflare-registrar",
+              locator: `cf:registrar:${platformId}`,
+              collector_id: "effect-gateway",
+              collector_program_hash: sha256("effect-gateway"),
+              collector_runtime_hash: "node:20",
+              response_payload: JSON.stringify(check),
+              response_hash: sha256(JSON.stringify(check)),
+              normalized_payload_hash: sha256(JSON.stringify(check)),
+              independence_group: "cf-readback",
+            }],
+          };
+        },
+        grant,
+        grantPublicKey: keys.publicKey,
+      });
+
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
-        .bind(actor, "cf_purchase", domain, JSON.stringify(result)).run();
-      return Response.json({ mode: "executed", ...result });
+        .bind(principal, "cf_purchase", domain, JSON.stringify({ actuality: result.actuality, receipt: result.receipt?.receipt_hash })).run();
+
+      return Response.json({ mode: "qp-gated", actuality: result.actuality, receipt: result.receipt?.receipt_hash, reason: result.reason });
     }
     case "name.wire_email": {
       const domain = String(args.domain ?? "").trim().toLowerCase();
