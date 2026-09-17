@@ -69,6 +69,43 @@ const KNOWN_CLASSES = new Set(["needs_reply", "receipt", "fyi", "urgent", "quara
 
 // AI output is untrusted: coerce to strict types so D1 binds and webhook
 // thresholds never see garbage (e.g. needs_reply:"0" string is truthy!).
+export function decodeRfc2047(s: string): string {
+  // Subjects arrive RFC2047-encoded (=?UTF-8?Q?...?=). Stored + searched raw,
+  // non-ASCII subjects become unfindable (proven live: "Post-AGI" matched 0/17).
+  if (!s || !s.includes("=?")) return s;
+  return s.replace(/=\?([^?\s]+)\?([QBqb])\?([^?]*)\?=/g, (_m, charset, enc, text) => {
+    try {
+      let bytes: Uint8Array;
+      if (enc.toUpperCase() === "B") {
+        const bin = atob(text.replace(/\s/g, ""));
+        bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+      } else {
+        const bytesArr: number[] = [];
+        const t = String(text).replace(/_/g, " ");
+        for (let i = 0; i < t.length; i++) {
+          if (t[i] === "=" && i + 2 < t.length) {
+            const hex = t.slice(i + 1, i + 3);
+            if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+              bytesArr.push(parseInt(hex, 16));
+              i += 2;
+              continue;
+            }
+          }
+          bytesArr.push(t.charCodeAt(i) & 0xff);
+        }
+        bytes = new Uint8Array(bytesArr);
+      }
+      try {
+        return new TextDecoder(charset).decode(bytes);
+      } catch {
+        return new TextDecoder("utf-8").decode(bytes);
+      }
+    } catch {
+      return text;
+    }
+  });
+}
+
 export function normalizeClassification(raw: any, fallbackSummary: string): Classification {
   const cls = String(raw?.classification ?? "fyi").toLowerCase();
   const importance = Math.max(0, Math.min(10, Math.round(Number(raw?.importance ?? 0) || 0)));

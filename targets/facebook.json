@@ -1,0 +1,39 @@
+{
+  "id": "target:facebook",
+  "name": "Facebook",
+  "category": "social",
+  "platform": "meta",
+  "autonomy": "agent_guaranteed",
+  "captcha_risk": "medium",
+  "note": "Unlocked via Instagram/Meta Business signup. One Meta account → Instagram + Facebook + WhatsApp.",
+
+  "cost": { "min": 0, "max": 0, "currency": "USD", "period": "month", "free_variant": true },
+
+  "depends_on": ["target:instagram"],
+  "capabilities_required": ["have_meta_business"],
+  "capabilities_granted": ["have_handle:facebook", "have_facebook_page"],
+
+  "stack": {
+    "provider": "meta",
+    "api": "Facebook Graph API",
+    "auth": "Meta Business Manager credentials",
+    "docs": ["https://developers.facebook.com/docs/graph-api"]
+  },
+
+  "tasks": [
+    {
+      "id": "task:create_facebook_page",
+      "type": "agent",
+      "method": "api",
+      "depends_on": ["target:instagram"],
+      "api_call": {
+        "service": "Facebook Graph API",
+        "method": "POST /me/accounts",
+        "args": { "name": "{business_name}", "category": "1004" }
+      },
+      "note": "Facebook Page is auto-created when Meta Business account is set up. This just links it."
+    }
+  ],
+
+  "gates": ["facebook_page_created_v1"]
+}

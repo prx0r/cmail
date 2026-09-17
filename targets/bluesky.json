@@ -1,0 +1,60 @@
+{
+  "id": "target:bluesky",
+  "name": "Bluesky",
+  "category": "social",
+  "autonomy": "agent_guaranteed",
+  "requires_human": false,
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "Bluesky is free. No phone number required. Direct API account creation."
+  },
+  "depends_on": [
+    "target:email"
+  ],
+  "capabilities_required": [
+    "receive_email"
+  ],
+  "capabilities_granted": [
+    "have_handle:bluesky"
+  ],
+  "stack": {
+    "provider": "bluesky (atproto)",
+    "api": "@atproto/api npm package",
+    "auth": "account credentials (created by agent)",
+    "docs": [
+      "https://atproto.com/guides/account-creation",
+      "https://docs.bsky.app/"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:signup_bluesky",
+      "type": "agent",
+      "method": "api",
+      "api_call": {
+        "service": "https://bsky.social",
+        "method": "com.atproto.server.createAccount",
+        "args": {
+          "identifier": "{handle}",
+          "email": "agents@{domain}",
+          "password": "{generated_password}"
+        }
+      },
+      "description": "Create Bluesky account via AT Protocol API",
+      "verification": "email_confirm",
+      "proof": {
+        "type": "api_check",
+        "check": "account exists + handle matches"
+      }
+    }
+  ],
+  "gates": [
+    "account_created_v1",
+    "handle_owned_v1"
+  ],
+  "captcha_risk": "none"
+}

@@ -1,0 +1,89 @@
+{
+  "id": "target:tiktok",
+  "name": "TikTok",
+  "category": "social",
+  "platform": "tiktok",
+  "autonomy": "agent_guaranteed",
+  "requires_human": false,
+  "captcha_risk": "high",
+  "note": "TikTok signup via Playwright. Captcha is complex (puzzle/rotate/3D shapes). Email + phone verification.",
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "Free."
+  },
+  "depends_on": [
+    "target:email",
+    "target:phone"
+  ],
+  "capabilities_required": [
+    "receive_email",
+    "can_verify_phone"
+  ],
+  "capabilities_granted": [
+    "have_handle:tiktok"
+  ],
+  "stack": {
+    "provider": "tiktok",
+    "apis": {
+      "signup": "Playwright (no official API for account creation)",
+      "content": "TikTok Content Posting API (after account exists)"
+    },
+    "auth": "account credentials (created by agent)",
+    "docs": [
+      "https://developers.tiktok.com/"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:signup_tiktok",
+      "type": "agent_or_human",
+      "method": "playwright",
+      "captcha": true,
+      "captcha_action": "ESCALATE_TO_HUMAN",
+      "captcha_note": "TikTok captcha is complex \u2014 puzzle, rotate, 3D shapes. Do NOT attempt to solve automatically.",
+      "browser_action": {
+        "url": "https://www.tiktok.com/signup",
+        "steps": [
+          "click sign up",
+          "select email signup",
+          "fill email: agents@{domain}",
+          "fill birthday: {random_adult_date}",
+          "fill password: {generated_password}",
+          "CAPTCHA: if present, pause and escalate \u2014 TikTok captchas are complex",
+          "verify email: check cmail inbox for code",
+          "phone verification: USE TELNYX SMS"
+        ]
+      },
+      "verification": {
+        "method": "email + sms",
+        "email_inbox": "agents@{domain}",
+        "sms_number": "{phone_number}",
+        "sms_provider": "telnyx"
+      },
+      "on_captcha": {
+        "action": "pause_and_notify_human",
+        "message": "TikTok signup has a complex captcha (puzzle/rotate). Please complete this step manually.",
+        "url": "https://www.tiktok.com/signup",
+        "credentials": "agents@{domain} / {generated_password}"
+      }
+    }
+  ],
+  "gates": [
+    "handle_owned_v1",
+    "email_verified_v1",
+    "phone_verified_v1"
+  ],
+  "escalation_rules": {
+    "if_captcha": "pause_and_notify_human \u2014 TikTok captcha is complex, never auto-solve",
+    "if_phone_verify_required": "use_telnyx_sms",
+    "if_sms_fails": "pause_and_notify_human",
+    "never": [
+      "retry_captcha_automatically",
+      "attempt_captcha_solver"
+    ]
+  }
+}

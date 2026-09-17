@@ -1,0 +1,76 @@
+{
+  "id": "target:phone",
+  "name": "Phone Number",
+  "category": "infrastructure",
+  "autonomy": "agent_or_human",
+  "requires_human": true,
+  "human_action": "approve_purchase",
+  "cost": {
+    "min": 1.0,
+    "max": 2.0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": false,
+    "note": "Telnyx phone numbers cost ~$1/mo. No free variant for real phone numbers.",
+    "alternatives": [
+      {
+        "name": "FreeVoIP",
+        "cost": 0,
+        "note": "Limited availability, may not work for SMS verification"
+      },
+      {
+        "name": "Skip phone-required platforms",
+        "cost": 0,
+        "note": "Use only Bluesky, npm, GitHub, GitLab (no phone needed)"
+      }
+    ]
+  },
+  "depends_on": [
+    "target:domain"
+  ],
+  "capabilities_required": [
+    "have_domain"
+  ],
+  "capabilities_granted": [
+    "have_phone",
+    "can_receive_sms",
+    "can_verify_phone"
+  ],
+  "stack": {
+    "provider": "telnyx",
+    "api": "Telnyx API v2",
+    "auth": "TELNYX_API_KEY (env)",
+    "docs": [
+      "https://developer.telnyx.com/",
+      "cmail/docs/PHONE.md"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:search_phone",
+      "type": "agent",
+      "action": "name.phone_search",
+      "args": {
+        "country": "{country_code}"
+      },
+      "description": "Search for available phone numbers"
+    },
+    {
+      "id": "task:purchase_phone",
+      "type": "money",
+      "action": "name.phone_purchase",
+      "args": {
+        "phone_number": "{number}",
+        "connection_id": "{conn_id}",
+        "confirmed": true
+      },
+      "human_gate": true,
+      "confirm_format": "PHONE {number}",
+      "description": "Purchase phone number from Telnyx"
+    }
+  ],
+  "gates": [
+    "phone_purchased_v1"
+  ],
+  "captcha_risk": "none"
+}

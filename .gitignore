@@ -5,5 +5,9 @@ dist-cli/
 *.log
 .env
 .env.*
-node_modules/
 package-lock.json
+
+# Generated evidence bundles (receipts)
+receipts/
+# Temporary proof artifacts
+/tmp/

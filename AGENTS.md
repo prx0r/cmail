@@ -1,14 +1,37 @@
-# AGENTS.md — cmail
+```
+  ╔═══════════════════════════════════╗
+  ║                                   ║
+  ║    ___    ____   ___              ║
+  ║   / _ \  / ___| / _ \             ║
+  ║  | | | || |  _ | | | |            ║
+  ║  | |_| || |_| || |_| |            ║
+  ║   \___/  \____| \___/             ║
+  ║                                   ║
+  ║   Agent Commerce Protocol         ║
+  ║                                   ║
+  ╚═══════════════════════════════════╝
+```
 
 ## What This Is
 Autonomous name acquisition pipeline. Agent types a name → sees domains + handles → buys domain → wires email → signs up for accounts.
 
 ## Start here (docs map)
+- **[GUIDE.md](GUIDE.md)** — Complete journey from name to working email
 - Tool surface: `docs/MCP_REFERENCE.md` (all 34 tools — read before calling anything unfamiliar)
 - Domains: `docs/DOMAINS.md` (buying flow, registrar-truth law, naming science)
 - Socials: `docs/SOCIALS.md` · Phone: `docs/PHONE.md`
 - Verification: `docs/EMAIL_VERIFICATION.md` (EVP-1) · Failures: `docs/TROUBLESHOOTING.md`
 - History, not guidance: `archive/` · Session gold: `a-logs/`
+
+## Pricing (free tier vs paid)
+
+| Feature | Cost | Required? |
+|---------|------|-----------|
+| Inbound email receive | $0 | ✅ Yes |
+| Domain purchase | ~$10/yr | Only if buying domains |
+| Outbound email (send) | $5/mo Workers Paid | ❌ **Optional** |
+
+**Outbound is optional.** Inbound works free. Only enable Workers Paid ($5/mo, 3k sends) if A-COM needs to SEND emails.
 
 ## Standing laws
 1. **NEVER buy without explicit human `confirmed:true`** (domains, phones, sends, ad spend). Standing owner order.
@@ -34,7 +57,7 @@ curl -X POST https://cmail.tradesprior.workers.dev/mcp \
   -d '{"tool":"name.cf_purchase","args":{"domain":"hamtask.com"}}'
 ```
 
-## 23 MCP Tools
+## 34 MCP Tools
 
 ### Domain (7)
 - `name.verify_domain` — DNS + RDAP deep check
@@ -61,6 +84,10 @@ curl -X POST https://cmail.tradesprior.workers.dev/mcp \
 
 ### Namecheap (6)
 - namecheap_list_domains, namecheap_check_domain, namecheap_get_tld_pricing, namecheap_register_domain, namecheap_get/set_dns_hosts, set_nameservers
+
+### Tasks (5) + Pipeline (2)
+- task.create, task.list, task.get, task.deliver, task.complete
+- pipeline.start, pipeline.status
 
 ## Social Platforms
 
@@ -92,14 +119,15 @@ CLOUDFLARE_REGISTRAR_TOKEN, APIFY_TOKEN, TELNYX_API_KEY
 ```
 
 ## Key Files
+- `GUIDE.md` — **Start here** — complete journey
 - `src/names.ts` — Domain + handle + purchase + phone logic (684 lines)
-- `src/mcp.ts` — 23 MCP tools (215 lines)
-- `HANDOVER.md` — Fresh agent guide
-- `FINAL_REVIEW.md` — Complete conclusions
-- `SOCIAL_ENDPOINTS.md` — Canonical endpoints per platform
-- `SIGNUP_AUTOMATION.md` — Platform signup steps
-- `APIFY_LOG.md` — Apify actors tested
+- `src/mcp.ts` — 34 MCP tools
+- `docs/MCP_REFERENCE.md` — All tools reference
+- `docs/DOMAINS.md` — Buying flow
+- `docs/SOCIALS.md` — Handle checking
+- `docs/EMAIL_VERIFICATION.md` — 9-layer verification
+- `docs/TROUBLESHOOTING.md` — Every failure class + fix
 
 ## Deployed
-- cmail MCP: https://cmail.tradesprior.workers.dev/mcp
-- UI: https://domain-hunter.tradesprior.workers.dev
+- A-COM MCP: https://cmail.tradesprior.workers.dev/mcp
+- Dashboard: https://cmail.tradesprior.workers.dev/ui/

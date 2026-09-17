@@ -57,3 +57,51 @@
 - Test traffic precedes recommendations, always.
 - Credentials get health-checked before they're depended on.
 - This file grows with every new failure mode. Append, don't rewrite.
+
+## Appendix 2026-09-11: expected email never arrived (recipient-side checklist)
+
+Case: sender says mail was sent, nothing matching in inbox/search. Run in order:
+
+1. **Exact recipient address?** Ask the sender for the literal To: header.
+   Per-address routing rules take priority over catch-all; a typo'd local part
+   still lands via catch-all, but a wrong *domain* (or a domain whose MX points
+   at Zoho/external) never touches cmail. `drawdle.dev`/`feedify.dev`/
+   `breadup.dev` are external-zoho — mail there goes to Zoho, not cmail.
+2. **Sender-side bounce?** Check sender's sent folder + bounce/DSN. A 550
+   (unknown user / policy rejection) or Cloudflare rejection happens before
+   the worker ever runs. No bounce + no arrival = still in a queue somewhere.
+3. **Quarantine?** `email.search` covers subject+summary, but quarantined mail
+   has a `[QUARANTINED: ...]`-prefixed summary. Search for the sender address
+   rather than keywords.
+4. **Attachment-only bodies are near-invisible to search.** The stored snippet
+   is derived from raw text; a message whose body is only a ZIP/PDF attachment
+   yields base64 garbage or an empty snippet, and keyword search over
+   subject+summary will miss it. If subject is unknown: list the mailbox by
+   time (`email.inbox`), then `email.read` the candidates — it returns the raw
+   `.eml` from R2 including attachments. Inbound cap is 25 MiB; a normal ZIP
+   is fine.
+5. **Time window.** Poll `email.inbox` for the mailbox sorted newest-first;
+   don't rely on memory of "nothing arrived." Confirm the send timestamp and
+   look ±15 min around it.
+6. **Only then** work the worker-side protocol above (MX → routing → tail →
+   D1 → sender OAuth).
+
+## Appendix 2026-09-11: attachment recovery via R2 (proven live)
+
+Case: `uk-business-phone-agent-blueprint.zip` (33KB) arrived on
+`agents@intelligentothers.xyz` (msg `1789139919097-24xkzi0ruu4`).
+`email.read` returns only the first 20KB of raw — headers plus the start of
+base64, no body text, truncated attachment. Recovery path that worked:
+
+1. `email.read` → `meta.r2_raw_key` (here
+   `email/raw/intelligentothers.xyz/agents/1789139919097.eml`).
+2. Fetch the full `.eml` from the `cmail-raw` R2 bucket with S3 creds
+   (vault: R2 token, endpoint
+   `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`).
+3. Parse with Python `email` lib: body parts + `get_filename()` attachments.
+4. Full 53KB recovered, zip extracted, contents verified.
+
+Rules: MCP `email.read` is for triage (metadata + first 20KB), never for
+attachment extraction. Anything with attachments goes R2-direct. Consider a
+future `email.attachment` tool that lists attachment names/sizes from stored
+metadata so this doesn't need S3 creds every time.

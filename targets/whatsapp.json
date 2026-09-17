@@ -1,0 +1,42 @@
+{
+  "id": "target:whatsapp",
+  "name": "WhatsApp Business",
+  "category": "social",
+  "platform": "meta",
+  "autonomy": "agent_guaranteed",
+  "captcha_risk": "low",
+  "note": "Unlocked via Instagram/Meta Business signup + phone number.",
+
+  "cost": { "min": 0, "max": 0, "currency": "USD", "period": "month", "free_variant": true },
+
+  "depends_on": ["target:instagram", "target:phone"],
+  "capabilities_required": ["have_meta_business", "can_verify_phone"],
+  "capabilities_granted": ["have_handle:whatsapp", "have_whatsapp_business"],
+
+  "stack": {
+    "provider": "meta",
+    "api": "WhatsApp Business API",
+    "auth": "Meta Business Manager credentials + phone number",
+    "docs": ["https://developers.facebook.com/docs/whatsapp-api"]
+  },
+
+  "tasks": [
+    {
+      "id": "task:setup_whatsapp_business",
+      "type": "agent",
+      "method": "api",
+      "depends_on": ["target:instagram", "target:phone"],
+      "api_call": {
+        "service": "WhatsApp Business API",
+        "method": "Register phone number via Meta Business Manager"
+      },
+      "verification": {
+        "method": "sms",
+        "sms_number": "{phone_number}",
+        "sms_provider": "telnyx"
+      }
+    }
+  ],
+
+  "gates": ["whatsapp_business_created_v1"]
+}

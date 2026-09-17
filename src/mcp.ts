@@ -1,5 +1,6 @@
 import type { Env } from "./do";
 import { checkAvailability, verifyDomain, checkHandles, cfCheckDomain, cfRegisterDomain, cfWireEmail, telnyxSearchNumbers, telnyxListNumbers, telnyxPurchaseNumber, readSms, storeInboundSms, searchDomains, fullSocialCheck, bulkCheck, bulkPersist, bulkHistory } from "./names";
+import { recommendPhoneIdentity, type PhoneIntent, type Strategy } from "./phoneIdentity";
 import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } from "./tasks";
 import { startPipeline } from "./pipeline";
 
@@ -12,7 +13,7 @@ const TOOLS = [
   "email.archive", "email.label", "email.needs_reply", "email.ask",
   "name.check", "name.verify_domain", "name.check_handles", "name.search", "name.social", "name.bulk_check", "name.bulk_history",
   "name.cf_check", "name.cf_purchase", "name.wire_email",
-  "name.phone_search", "name.phone_list", "name.phone_purchase", "name.read_sms",
+  "name.phone_search", "name.phone_list", "name.phone_purchase", "name.phone_recommend", "name.read_sms",
   "task.create", "task.list", "task.get", "task.deliver", "task.complete",
   "pipeline.start", "pipeline.status",
 ];
@@ -36,7 +37,9 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
     case "email.list_domains": return Response.json({ domains: (await env.DB.prepare("SELECT * FROM domains").all()).results });
     case "email.list_mailboxes": return Response.json({ mailboxes: (await env.DB.prepare("SELECT * FROM mailboxes").all()).results });
     case "email.inbox": {
-      const rows = await env.DB.prepare("SELECT * FROM messages WHERE mailbox=? ORDER BY received_at DESC LIMIT 50").bind(args.mailbox ?? "").all();
+      const rows = args.mailbox
+        ? await env.DB.prepare("SELECT * FROM messages WHERE mailbox=? ORDER BY received_at DESC LIMIT 50").bind(args.mailbox).all()
+        : await env.DB.prepare("SELECT * FROM messages ORDER BY received_at DESC LIMIT 50").all();
       return Response.json({ messages: rows.results });
     }
     case "email.search": {
@@ -240,6 +243,36 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
         .bind(actor, "phone_purchase", phone, JSON.stringify(result)).run();
       return Response.json({ mode: "executed", ...result });
+    }
+    case "name.phone_recommend": {
+      // Read-only recommendation. No purchase/reserve path exists here by
+      // design: recommend != reserve != buy. Buying stays behind
+      // name.phone_purchase + confirmed:true (human only, never the agent).
+      const intent = (args.intent ?? {}) as PhoneIntent;
+      const country = String(args.country ?? "GB").trim().toUpperCase();
+      const typeFor = (s: Strategy) =>
+        s === "local" ? "local" : s === "national" ? "national" : s === "mobile" ? "mobile" : "toll-free";
+      try {
+        const result = await recommendPhoneIdentity(intent, async (strategy, it) => {
+          const r: any = await telnyxSearchNumbers(country, env as any, {
+            type: typeFor(strategy) as any,
+            locality: strategy === "local" ? it.locality : undefined,
+            features: strategy === "mobile" && it.sms_required ? "sms" : undefined,
+            limit: 40,
+          });
+          if (r.error) return [];
+          return (r.numbers || []).map((n: any) => ({
+            number: n.number,
+            features: n.features || [],
+            monthly_cost: n.monthly_cost ?? null,
+          }));
+        });
+        await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
+          .bind(actor, "phone_recommend", country, JSON.stringify(result.architecture)).run();
+        return Response.json({ ...result, country, purchasable: false });
+      } catch (e: any) {
+        return Response.json({ error: `recommend failed: ${String(e?.message ?? e).slice(0, 200)}` }, { status: 502 });
+      }
     }
     case "name.read_sms": {
       const to = String(args.to ?? "").trim();

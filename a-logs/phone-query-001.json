@@ -1,0 +1,41 @@
+{
+  "query_id": "phone-query-001",
+  "ts": "2026-09-11T15:45:00Z",
+  "tool": "name.phone_recommend",
+  "worker_version": "8eaa4141-c5c3-4d0a-b627-928f6eb5c8ea",
+  "business_profile": {
+    "vertical": "online_store",
+    "country": "GB",
+    "use_cases": ["social_signups_otp", "ai_agent_inbound", "call_forwarding_to_agent", "customer_texts"],
+    "maybe": ["international_outbound"]
+  },
+  "intent": {
+    "locality_is_purchase_signal": 0.1,
+    "national_identity_value": 0.9,
+    "expected_expansion": 0.7,
+    "trust_sensitivity": 0.6,
+    "free_to_caller_value": 0.2,
+    "inbound_call_importance": 0.7,
+    "cost_sensitivity": 0.5,
+    "sms_required": true,
+    "same_number_sms_required": false
+  },
+  "assumptions": [
+    "SMS is for OTPs/platform messages, not customers texting the public number (unconfirmed)"
+  ],
+  "architecture": {
+    "primary": "national",
+    "secondary": "mobile",
+    "scores": { "local": -0.08, "national": 0.505, "mobile": 0.46, "toll_free": 0.3 }
+  },
+  "options_presented": [
+    { "archetype": "BEST_OVERALL", "number": "+443301900433", "strategy": "national", "score": 58.25, "setup_usd": 1, "mrc_usd": 1 },
+    { "archetype": "BEST_MEMORY", "number": "+447537173336", "strategy": "mobile", "score": 57.94, "setup_usd": 2, "mrc_usd": 2 },
+    { "archetype": "BEST_VALUE", "number": "+443301900422", "strategy": "national", "score": 56.92, "setup_usd": 1, "mrc_usd": 1 }
+  ],
+  "pricing_snapshot": "docs/phone-blueprint/TELNYX_GB_PRICING.md (2026-09-11)",
+  "status": "recommended_awaiting_pick",
+  "customer_pick": null,
+  "override": null,
+  "outcome": null
+}

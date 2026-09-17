@@ -1,0 +1,72 @@
+{
+  "_comment": "TEMPLATE: Copy this file, rename to {platform}.json, fill in the blanks",
+  "_instructions": [
+    "1. Copy this file to targets/{platform}.json",
+    "2. Fill in every field marked FILL",
+    "3. Run: npx tsx -e \"import './src/targets'\" to validate",
+    "4. That's it — agent automatically picks it up"
+  ],
+
+  "id": "target:FILL_PLATFORM_ID",
+  "name": "FILL_PLATFORM_NAME",
+  "category": "social",
+  "platform": "FILL_PROVIDER",
+  "autonomy": "agent_guaranteed",
+  "captcha_risk": "FILL_low_or_medium_or_high",
+
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "FILL_cost_notes"
+  },
+
+  "depends_on": ["target:email"],
+  "capabilities_required": ["receive_email"],
+  "capabilities_granted": ["have_handle:FILL_PLATFORM"],
+
+  "stack": {
+    "provider": "FILL_PROVIDER_NAME",
+    "api": "FILL_API_METHOD",
+    "auth": "FILL_AUTH_METHOD",
+    "docs": ["FILL_DOCS_URL"]
+  },
+
+  "tasks": [
+    {
+      "id": "task:signup_FILL_PLATFORM",
+      "type": "agent_or_human",
+      "method": "FILL_playwright_or_api",
+      "captcha": true,
+      "captcha_action": "ESCALATE_TO_HUMAN",
+      "browser_action": {
+        "url": "FILL_SIGNUP_URL",
+        "steps": [
+          "FILL_step_1",
+          "FILL_step_2",
+          "captcha: if present, pause and escalate",
+          "verify email: check cmail inbox for code"
+        ]
+      },
+      "verification": {
+        "method": "email",
+        "inbox": "agents@{domain}"
+      },
+      "on_captcha": {
+        "action": "pause_and_notify_human",
+        "message": "FILL_PLATFORM signup has a captcha. Please complete manually.",
+        "url": "FILL_SIGNUP_URL"
+      }
+    }
+  ],
+
+  "gates": ["handle_owned_v1"],
+
+  "escalation_rules": {
+    "if_captcha": "pause_and_notify_human",
+    "if_phone_verify_required": "use_telnyx_sms",
+    "never": ["retry_captcha_automatically"]
+  }
+}

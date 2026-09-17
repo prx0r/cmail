@@ -660,16 +660,32 @@ async function telnyxCall(method: string, path: string, apiKey: string, body?: a
   return d;
 }
 
-export async function telnyxSearchNumbers(country: string, env: TelnyxEnv): Promise<any> {
+export interface TelnyxSearchFilters {
+  type?: "local" | "national" | "mobile" | "toll-free";
+  locality?: string;
+  features?: string; // e.g. "sms"
+  limit?: number;
+}
+
+export async function telnyxSearchNumbers(country: string, env: TelnyxEnv, filters?: TelnyxSearchFilters): Promise<any> {
   const key = env.TELNYX_API_KEY;
   if (!key) return { error: "TELNYX_API_KEY not set", numbers: [] };
-  const d = await telnyxCall("GET", `/available_phone_numbers?filter[country_code]=${country}&page[size]=10`, key);
+  const q = new URLSearchParams({ "filter[country_code]": country });
+  if (filters?.type) q.set("filter[phone_number_type]", filters.type);
+  if (filters?.locality) q.set("filter[locality]", filters.locality);
+  if (filters?.features) q.set("filter[features]", filters.features);
+  q.set("filter[reservable]", "true");
+  q.set("filter[exclude_held_numbers]", "true");
+  q.set("page[size]", String(Math.min(filters?.limit ?? 10, 100)));
+  const d = await telnyxCall("GET", `/available_phone_numbers?${q.toString()}`, key);
   if (d.error) return d;
   return {
     numbers: (d.data || []).map((n: any) => ({
       number: n.phone_number,
       features: n.features || [],
       cost: n.cost_per_month || null,
+      monthly_cost: n.monthly_cost || n.cost_per_month || null,
+      reservable: n.reservable ?? null,
     })),
     country,
   };

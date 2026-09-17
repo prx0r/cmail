@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canDo, normalizeClassification, routeAddress, screenInjection, threadId } from "./lib";
+import { canDo, normalizeClassification, routeAddress, screenInjection, threadId, decodeRfc2047 } from "./lib";
 
 describe("routeAddress", () => {
   it("splits normal addresses", () => {
@@ -65,5 +65,20 @@ describe("screenInjection", () => {
     expect(screenInjection("refund approval needed", "customer requests urgent refund approval, order 456").quarantined).toBe(false);
     expect(screenInjection("API down", "help, returns 500, please advise").quarantined).toBe(false);
     expect(screenInjection("invoice", "invoice attached for last month").quarantined).toBe(false);
+  });
+});
+
+describe("decodeRfc2047", () => {
+  it("decodes Q-encoded UTF-8 subjects", () => {
+    expect(decodeRfc2047("=?UTF-8?Q?Fwd=3A_Post=2DAGI_Alpha?=")).toBe("Fwd: Post-AGI Alpha");
+  });
+  it("decodes multibyte sequences", () => {
+    expect(decodeRfc2047("=?UTF-8?Q?=E2=80=94_Interface?=")).toBe("— Interface");
+  });
+  it("passes plain subjects through", () => {
+    expect(decodeRfc2047("hello world")).toBe("hello world");
+  });
+  it("decodes B-encoded words", () => {
+    expect(decodeRfc2047("=?UTF-8?B?SGVsbG8=?=")).toBe("Hello");
   });
 });

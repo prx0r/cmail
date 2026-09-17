@@ -1,0 +1,87 @@
+{
+  "id": "target:x",
+  "name": "X (Twitter)",
+  "category": "social",
+  "platform": "x",
+  "autonomy": "agent_guaranteed",
+  "requires_human": false,
+  "captcha_risk": "medium",
+  "note": "X signup via Playwright. Email + phone verification required.",
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "Free. Blue checkmark is $8/mo but not required."
+  },
+  "depends_on": [
+    "target:email",
+    "target:phone"
+  ],
+  "capabilities_required": [
+    "receive_email",
+    "can_verify_phone"
+  ],
+  "capabilities_granted": [
+    "have_handle:x"
+  ],
+  "stack": {
+    "provider": "x",
+    "api": "Playwright (no official account creation API)",
+    "auth": "account credentials (created by agent)",
+    "docs": [
+      "https://developer.x.com/en/docs"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:signup_x",
+      "type": "agent_or_human",
+      "method": "playwright",
+      "captcha": true,
+      "captcha_action": "ESCALATE_TO_HUMAN",
+      "browser_action": {
+        "url": "https://x.com/i/flow/signup",
+        "steps": [
+          "fill name: {display_name}",
+          "click next",
+          "fill email: agents@{domain}",
+          "click next",
+          "fill birth_date: {random_adult_date}",
+          "click next",
+          "click sign up",
+          "CAPTCHA: if present, pause and escalate",
+          "verify email: check cmail inbox for code",
+          "phone verification: USE TELNYX SMS",
+          "enter SMS code"
+        ]
+      },
+      "verification": {
+        "method": "email + sms",
+        "email_inbox": "agents@{domain}",
+        "sms_number": "{phone_number}",
+        "sms_provider": "telnyx"
+      },
+      "on_captcha": {
+        "action": "pause_and_notify_human",
+        "message": "X signup has a captcha. Please complete this step manually.",
+        "url": "https://x.com/i/flow/signup",
+        "credentials": "agents@{domain} / {generated_password}"
+      }
+    }
+  ],
+  "gates": [
+    "handle_owned_v1",
+    "email_verified_v1",
+    "phone_verified_v1"
+  ],
+  "escalation_rules": {
+    "if_captcha": "pause_and_notify_human",
+    "if_phone_verify_required": "use_telnyx_sms",
+    "if_sms_fails": "pause_and_notify_human",
+    "never": [
+      "retry_captcha_automatically"
+    ]
+  }
+}

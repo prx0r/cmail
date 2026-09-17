@@ -1,0 +1,151 @@
+{
+  "id": "target:instagram",
+  "name": "Instagram",
+  "category": "social",
+  "platform": "meta",
+  "autonomy": "agent_guaranteed",
+  "requires_human": false,
+  "captcha_risk": "high",
+  "note": "Meta Business account unlocks Instagram + Facebook + WhatsApp. Agent can attempt but captcha likely.",
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "Free. But Meta Business setup may need manual steps."
+  },
+  "depends_on": [
+    "target:email",
+    "target:phone"
+  ],
+  "capabilities_required": [
+    "receive_email",
+    "can_verify_phone"
+  ],
+  "capabilities_granted": [
+    "have_handle:instagram",
+    "have_handle:facebook",
+    "have_handle:whatsapp",
+    "have_meta_business"
+  ],
+  "meta_bundle": {
+    "description": "One Meta Business account \u2192 3 platforms",
+    "platforms": [
+      "instagram",
+      "facebook",
+      "whatsapp"
+    ],
+    "setup_order": [
+      "1. Create Meta Business account (business.facebook.com)",
+      "2. Add Instagram account (or create new)",
+      "3. Create Facebook Page (auto-linked)",
+      "4. Set up WhatsApp Business (auto-linked)"
+    ]
+  },
+  "stack": {
+    "provider": "meta",
+    "apis": {
+      "instagram": "Instagram Graph API (via Meta Business)",
+      "facebook": "Facebook Graph API",
+      "whatsapp": "WhatsApp Business API"
+    },
+    "auth": "Meta Business Manager credentials",
+    "docs": [
+      "https://developers.facebook.com/docs/instagram-api",
+      "https://developers.facebook.com/docs/graph-api",
+      "https://developers.facebook.com/docs/whatsapp-api"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:signup_meta_business",
+      "type": "agent_or_human",
+      "method": "playwright",
+      "captcha": true,
+      "captcha_action": "ESCALATE_TO_HUMAN",
+      "browser_action": {
+        "url": "https://business.facebook.com/overview",
+        "steps": [
+          "click create account",
+          "fill business name: {business_name}",
+          "fill name: {first_name} {last_name}",
+          "fill email: agents@{domain}",
+          "fill password: {generated_password}",
+          "CAPTCHA: if present, pause and escalate to human"
+        ]
+      },
+      "verification": {
+        "method": "email",
+        "inbox": "agents@{domain}",
+        "search_query": "Meta confirmation"
+      },
+      "on_captcha": {
+        "action": "pause_and_notify_human",
+        "message": "Meta signup has a captcha. Please complete this step manually.",
+        "url": "https://business.facebook.com/overview",
+        "credentials": "agents@{domain} / {generated_password}"
+      }
+    },
+    {
+      "id": "task:connect_instagram",
+      "type": "agent",
+      "depends_on": [
+        "task:signup_meta_business"
+      ],
+      "method": "api",
+      "api_call": {
+        "service": "Facebook Graph API",
+        "method": "POST /{ig-user-id}/ig_user_page",
+        "note": "Connect Instagram to Facebook Page via Graph API"
+      }
+    },
+    {
+      "id": "task:create_facebook_page",
+      "type": "agent",
+      "depends_on": [
+        "task:signup_meta_business"
+      ],
+      "method": "api",
+      "api_call": {
+        "service": "Facebook Graph API",
+        "method": "POST /me/accounts",
+        "args": {
+          "name": "{business_name}",
+          "category": "1004",
+          "description": "Official page for {business_name}"
+        }
+      }
+    },
+    {
+      "id": "task:setup_whatsapp_business",
+      "type": "agent",
+      "depends_on": [
+        "task:signup_meta_business",
+        "target:phone"
+      ],
+      "method": "api",
+      "api_call": {
+        "service": "WhatsApp Business API",
+        "method": "Register phone number",
+        "args": {
+          "phone_number": "{phone_number}",
+          "business_name": "{business_name}"
+        }
+      }
+    }
+  ],
+  "gates": [
+    "meta_business_created_v1",
+    "handle_owned_v1"
+  ],
+  "escalation_rules": {
+    "if_captcha": "pause_and_notify_human",
+    "if_checkpoint": "pause_and_notify_human",
+    "if_phone_verify_required": "use_telnyx_sms",
+    "never": [
+      "retry_captcha_automatically",
+      "bypass_security"
+    ]
+  }
+}

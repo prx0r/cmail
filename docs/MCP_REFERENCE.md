@@ -59,13 +59,14 @@ confirm via registrar API automatically (`verify_hits`, opt-out available).
 Standing rule: **NEVER buy without explicit human `confirmed:true` in-session.**
 Availability research is always free; say so in every quote.
 
-## Phone / SMS (4, needs TELNYX_API_KEY)
+## Phone / SMS (5, needs TELNYX_API_KEY)
 
 | Tool | Args | Notes |
 |---|---|---|
 | `name.phone_search` | `country` (default US) | available numbers + features |
+| `name.phone_recommend` | `country`, `intent{locality_is_purchase_signal, national_identity_value, expected_expansion, trust_sensitivity, sms_required, same_number_sms_required, locality, monthly_budget}` | **read-only strategy + scored top-3** (UK blueprint rubric). No purchase path exists in this tool; returns `purchasable:false`, `requires_confirmation:true` |
 | `name.phone_list` | — | owned numbers |
-| `name.phone_purchase` | `phone_number`, `connection_id`, `confirmed:true` | **money gate**, preview without flag, audit-logged |
+| `name.phone_purchase` | `phone_number`, `connection_id`, `confirmed:true` | **money gate**, preview without flag, audit-logged. Agent never passes confirmed:true without explicit human approval in-session |
 | `name.read_sms` | `to`, `limit?` | in-memory relay store (latest 10 default) |
 
 ## Tasks (5) + pipeline (2)

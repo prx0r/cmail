@@ -1,0 +1,56 @@
+id: uk-national-ecommerce
+name: "ParcelPond"
+summary: "Online ecommerce brand selling across the UK with phone support and transactional SMS."
+intent:
+  country: GB
+  business_model: ecommerce
+  customer_type: consumer
+  headquarters_city: Manchester
+  service_locations: ["United Kingdom"]
+  locality_is_purchase_signal: 0.05
+  trust_sensitivity: 0.65
+  expected_expansion: 0.95
+  national_identity_value: 0.95
+  free_to_caller_value: 0.25
+  cost_sensitivity: 0.7
+  primary_channels: [voice_inbound, sms]
+  same_number_sms_required: false
+
+decision_chain:
+  - "Physical HQ locality is incidental to why customers buy."
+  - "A Manchester local number would create unnecessary geographic semantics."
+  - "Choose a national 03 public voice identity."
+  - "SMS is still needed, so provision a separate GB mobile messaging DID under current Telnyx GB capability constraints."
+  - "Use a branded alphanumeric sender-ID workflow separately where appropriate; do not conflate sender ID with ownership of the public support DID."
+  - "Rank 03 candidates primarily by pattern/speech quality and price because locality is intentionally neutral."
+
+telnyx_searches:
+  public_voice:
+    filter[country_code]: GB
+    filter[phone_number_type]: national
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+  messaging:
+    filter[country_code]: GB
+    filter[phone_number_type]: mobile
+    filter[features]: sms
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+
+top_three_architectures:
+  - archetype: BEST_OVERALL
+    setup: "03 national public voice + 07 SMS"
+    rationale: "clean UK-wide identity with correct channel split"
+  - archetype: BEST_VALUE
+    setup: "cheapest acceptable 03 + cheapest SMS-capable 07"
+    rationale: "same semantics, cost optimised"
+  - archetype: FREEPHONE_UPSELL
+    setup: "0800 public voice + 07 SMS"
+    rationale: "only if inbound-call friction is worth paying for; otherwise unnecessary"
+
+purchase_gate:
+  require_human_confirmation: true
+  compare_recurring_costs: true
+  do_not_buy_local_hq_number_by_default: true

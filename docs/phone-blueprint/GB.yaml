@@ -1,0 +1,83 @@
+country: GB
+version: 1
+verified_against_telnyx_docs: "2026-09-11"
+provider: telnyx
+
+number_types:
+  local:
+    semantics: "geographic/local identity"
+    typical_prefix_family: ["01", "02"]
+    recommended_when:
+      - locality_is_purchase_signal
+      - branch_specific_identity
+      - local_service_trust
+    avoid_when:
+      - geography_is_incidental
+      - national_brand_is_primary
+      - same_number_sms_is_hard_requirement
+  national:
+    semantics: "UK-wide non-geographic business identity"
+    typical_prefix_family: ["03"]
+    recommended_when:
+      - national_brand
+      - expansion_expected
+      - single_uk_identity
+    avoid_when:
+      - strong_locality_signal_is_core
+      - same_number_sms_is_hard_requirement
+  mobile:
+    semantics: "mobile/messaging-capable identity"
+    typical_prefix_family: ["07"]
+    recommended_when:
+      - sms_required
+      - mobile_personal_identity
+      - operational_messaging_endpoint
+    avoid_when:
+      - sole_public_identity_for_formal_business_without_reason
+  toll_free:
+    semantics: "free-to-caller national identity"
+    typical_prefix_family: ["0800", "0808"]
+    recommended_when:
+      - inbound_calls_high_value
+      - free_to_caller_is_important
+      - national_support_or_sales
+    avoid_when:
+      - inbound_cost_sensitivity_high
+      - same_number_sms_is_hard_requirement
+
+telnyx_gb_capability_rule:
+  local_sms: false
+  national_sms: false
+  toll_free_sms: false
+  mobile_sms: true
+  source: "Telnyx: Find GB Numbers on Telnyx Portal"
+
+hard_gates:
+  - coverage_supported
+  - required_features_supported
+  - regulatory_preflight_pass_or_explicit_pending
+  - within_budget_or_human_override
+  - recent_search_before_order
+  - human_spend_approval
+
+search_defaults:
+  country_code: GB
+  reservable: true
+  exclude_held_numbers: true
+  limit: 100
+  best_effort: false
+  quickship: false
+  note: "best_effort and quickship are documented with US/CA/US-toll-free scope; do not use as UK optimization features"
+
+candidate_score_weights:
+  business_fit: 30
+  capability_ops: 20
+  memorability: 20
+  spoken_usability: 15
+  economics: 10
+  future_fit: 5
+
+human_choice_archetypes:
+  - BEST_OVERALL
+  - BEST_MEMORY_OR_LOCAL_TRUST
+  - BEST_VALUE_OR_FUTURE_FIT

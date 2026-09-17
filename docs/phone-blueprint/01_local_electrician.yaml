@@ -1,0 +1,57 @@
+id: uk-electrician-local
+name: "Northfield Electrical"
+summary: "Local electrician starting in Nottingham; local trust matters, but the company may expand regionally."
+intent:
+  country: GB
+  business_model: local_service
+  customer_type: consumer
+  headquarters_city: Nottingham
+  service_locations: [Nottingham, Beeston, Arnold]
+  locality_is_purchase_signal: 0.9
+  trust_sensitivity: 0.9
+  expected_expansion: 0.55
+  national_identity_value: 0.35
+  free_to_caller_value: 0.1
+  cost_sensitivity: 0.6
+  primary_channels: [voice_inbound, voice_outbound, sms]
+  same_number_sms_required: false
+
+decision_chain:
+  - "Locality is genuinely part of the purchase decision, so local 01/02 is a strong public voice identity."
+  - "SMS is also required operationally."
+  - "Current Telnyx GB guidance says local numbers are not SMS supported."
+  - "Do not downgrade the public identity to mobile solely to force one-number architecture."
+  - "Recommend a two-number setup: local geographic public voice + mobile SMS/field-work number."
+  - "If the founder strongly prioritises future national expansion over local trust, offer an 03 public alternative as one of the three choices."
+
+telnyx_searches:
+  primary_voice:
+    filter[country_code]: GB
+    filter[phone_number_type]: local
+    filter[locality]: Nottingham
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+  sms_endpoint:
+    filter[country_code]: GB
+    filter[phone_number_type]: mobile
+    filter[features]: sms
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+
+top_three_architectures:
+  - archetype: BEST_OVERALL
+    setup: "Nottingham local voice + UK mobile SMS"
+    rationale: "maximises local buying signal while preserving messaging capability"
+  - archetype: BEST_FUTURE_FIT
+    setup: "03 national voice + UK mobile SMS"
+    rationale: "less geographic lock-in if expansion becomes the dominant objective"
+  - archetype: LOWEST_COMPLEXITY
+    setup: "single UK mobile for voice + SMS"
+    rationale: "operationally simplest, but intentionally accepts weaker formal/local public identity"
+
+purchase_gate:
+  require_human_confirmation: true
+  fresh_search_before_order: true
+  validate_requirement_group_per_number_type: true

@@ -1,0 +1,62 @@
+id: uk-high-ticket-national-helpline
+name: "ClaimBridge"
+summary: "National high-ticket claims/intake service where inbound calls are the main conversion event."
+intent:
+  country: GB
+  business_model: support_helpline
+  customer_type: consumer
+  headquarters_city: Birmingham
+  service_locations: ["United Kingdom"]
+  locality_is_purchase_signal: 0.05
+  trust_sensitivity: 0.9
+  expected_expansion: 1.0
+  national_identity_value: 0.95
+  free_to_caller_value: 0.95
+  cost_sensitivity: 0.25
+  primary_channels: [voice_inbound, voice_outbound, sms]
+  same_number_sms_required: false
+
+decision_chain:
+  - "Inbound calls are the economically important action."
+  - "The business serves the whole UK and does not benefit from city semantics."
+  - "A toll-free public identity is justified if inbound economics remain acceptable."
+  - "Current Telnyx GB guidance says toll-free is not SMS supported, so add a mobile messaging number."
+  - "Compare a national 03 alternative in the human choice set because it may have better economics while preserving a national identity."
+  - "Do not recommend toll-free merely because it sounds 'big'; tie it to the value of reducing caller friction."
+
+telnyx_searches:
+  toll_free_voice:
+    filter[country_code]: GB
+    filter[phone_number_type]: toll_free
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+  national_comparator:
+    filter[country_code]: GB
+    filter[phone_number_type]: national
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+  messaging:
+    filter[country_code]: GB
+    filter[phone_number_type]: mobile
+    filter[features]: sms
+    filter[reservable]: true
+    filter[exclude_held_numbers]: true
+    filter[limit]: 100
+
+top_three_architectures:
+  - archetype: BEST_INBOUND
+    setup: "0800/0808 public voice + 07 SMS"
+    rationale: "best matches free-to-caller, high-value inbound strategy"
+  - archetype: BEST_ECONOMICS
+    setup: "03 public voice + 07 SMS"
+    rationale: "national identity without making freephone economics mandatory"
+  - archetype: SINGLE_NUMBER_SIMPLICITY
+    setup: "07 voice + SMS"
+    rationale: "simplest technically but sacrifices the intended national helpline identity"
+
+purchase_gate:
+  require_human_confirmation: true
+  show_estimated_recurring_and_usage_costs: true
+  validate_toll_free_requirements: true

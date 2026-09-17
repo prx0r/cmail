@@ -1,0 +1,72 @@
+{
+  "id": "target:email",
+  "name": "Email Reception",
+  "category": "infrastructure",
+  "autonomy": "agent_guaranteed",
+  "requires_human": false,
+  "cost": {
+    "min": 0,
+    "max": 0,
+    "currency": "USD",
+    "period": "month",
+    "free_variant": true,
+    "note": "Cloudflare Email Routing is free. cmail worker is free tier."
+  },
+  "depends_on": [
+    "target:domain"
+  ],
+  "capabilities_granted": [
+    "receive_email",
+    "can_receive_verification",
+    "can_receive_orders"
+  ],
+  "stack": {
+    "provider": "cloudflare + cmail",
+    "api": "CF Email Routing API + cmail MCP",
+    "auth": "CF_API_TOKEN (env)",
+    "docs": [
+      "https://developers.cloudflare.com/email-routing/",
+      "cmail/docs/EMAIL_VERIFICATION.md"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:wire_email",
+      "type": "agent",
+      "action": "name.wire_email",
+      "args": {
+        "domain": "{domain}",
+        "confirmed": true
+      },
+      "description": "Configure Cloudflare Email Routing to cmail worker"
+    },
+    {
+      "id": "task:register_mailbox",
+      "type": "agent",
+      "action": "admin/address",
+      "args": {
+        "domain": "{domain}",
+        "local": "agents",
+        "agent": "tenant-agent"
+      },
+      "description": "Register agents@{domain} in cmail D1 index"
+    },
+    {
+      "id": "task:verify_email",
+      "type": "agent",
+      "action": "verify-capacity.sh",
+      "args": {
+        "domain": "{domain}",
+        "address": "agents@{domain}"
+      },
+      "description": "Run 7-layer infrastructure verification"
+    }
+  ],
+  "gates": [
+    "email_infrastructure_v1",
+    "routing_catchall_v1",
+    "worker_live_v1",
+    "mailbox_indexed_v1"
+  ],
+  "captcha_risk": "none"
+}

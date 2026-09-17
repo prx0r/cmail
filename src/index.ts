@@ -1,5 +1,5 @@
 import type { Env } from "./do";
-import { routeAddress, threadId, classify, canDo, screenInjection } from "./lib";
+import { routeAddress, threadId, classify, canDo, screenInjection, decodeRfc2047 } from "./lib";
 import { handleMcp } from "./mcp";
 export { MailboxDO } from "./do";
 
@@ -22,7 +22,9 @@ export interface InboundMsg {
 
 // Shared pipeline: real Email Routing messages AND /test/ingest go through here.
 async function processInbound(env: Env, m: InboundMsg): Promise<string> {
-  const { to, from, subject, rawText } = m;
+  const { to, from, rawText } = m;
+  // Decode BEFORE threading/search/storage: encoded subjects are unfindable.
+  const subject = decodeRfc2047(m.subject);
   const { domain, localPart } = routeAddress(to);
   const snippet = rawText.replace(/<[^>]*>/g, " ").slice(0, 2000);
 

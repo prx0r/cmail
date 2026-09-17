@@ -1,0 +1,60 @@
+{
+  "id": "target:domain",
+  "name": "Domain Registration",
+  "category": "infrastructure",
+  "autonomy": "agent_or_human",
+  "requires_human": true,
+  "human_action": "approve_purchase",
+  "cost": {
+    "min": 2.0,
+    "max": 15.0,
+    "currency": "USD",
+    "period": "year",
+    "free_variant": false,
+    "note": "Domain purchase always costs money. Minimum ~$2/yr for .xyz on Cloudflare."
+  },
+  "depends_on": [],
+  "capabilities_granted": [
+    "have_domain",
+    "have_cloudflare_zone",
+    "can_manage_dns"
+  ],
+  "stack": {
+    "provider": "cloudflare",
+    "api": "CF Registrar API",
+    "auth": "CF_API_TOKEN (env)",
+    "docs": [
+      "https://developers.cloudflare.com/registrar/",
+      "cmail/docs/DOMAINS.md"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "task:check_domain",
+      "type": "agent",
+      "action": "name.cf_check",
+      "args": {
+        "domain": "{domain}"
+      },
+      "description": "Check if domain is available on Cloudflare"
+    },
+    {
+      "id": "task:purchase_domain",
+      "type": "money",
+      "action": "name.cf_purchase",
+      "args": {
+        "domain": "{domain}",
+        "confirmed": true,
+        "confirm_text": "BUY {domain}"
+      },
+      "description": "Purchase domain via Cloudflare Registrar",
+      "human_gate": true,
+      "confirm_format": "BUY {domain}"
+    }
+  ],
+  "gates": [
+    "dns_valid_v1",
+    "cf_zone_active_v1"
+  ],
+  "captcha_risk": "none"
+}
