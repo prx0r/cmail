@@ -85,6 +85,43 @@ Content creator → creates video
       → Analytics → measures performance (with proven data)
 ```
 
+## Competitive Landscape
+
+### Who Else Is Doing This
+
+| Player | Focus | What They Prove | What They Don't |
+|--------|-------|----------------|-----------------|
+| **VCAP** (IETF) | Agent-to-agent commerce | Authorization + settlement | Platform state |
+| **EMILIA Protocol** (IETF) | Human approval receipts | Approver bound to action | Independent readback |
+| **Agent Action Receipts** (IETF) | Signed hash-chained logs | Action attempted + outcome | Platform verification |
+| **NiyamAI** (academic) | Intent-bound guardrails | Agent stayed within bounds | External world state |
+| **Ledger** | Hardware agent security | Agent identity + key custody | Action proof |
+| **Visa Trusted Agent** | Commerce authentication | Agent identity for merchants | Content verification |
+| **Sello** | Receiver-attested receipts | Service observed the call | Platform-level proof |
+| **Postiz** | Social media scheduling | "We posted it" (trust us) | Nothing independently |
+
+### Our Unique Position
+
+**We're the only ones doing platform-level independent proof.**
+
+Others prove the agent was authorized. We prove the world actually changed.
+
+```
+Others:  "The agent was allowed to post"     → Authorization proof
+Us:      "The video exists on YouTube with   → World-state proof
+          the right title, channel, and
+          visibility, verified independently
+          via Google's API"
+```
+
+### Why This Is a Business
+
+**Proof of spend** = every dollar spent has a signed receipt + independent readback.
+**Security** = credentials never leave the vault, QP kernel is the trust boundary.
+**Trust** = deterministic, verifiable, not "trust us."
+
+**The $8.50 incident** (from our own history) proves why this matters: an agent manufactured its own authorization context and executed a purchase. Without QP, there's no way to detect this. With QP, the grant system prevents it cryptographically.
+
 ## The Product
 
 ### MVP: Proof of Social Presence
