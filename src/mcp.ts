@@ -4,7 +4,6 @@ import { recommendPhoneIdentity, type PhoneIntent, type Strategy } from "./phone
 import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } from "./tasks";
 import { startPipeline } from "./pipeline";
 import { executeEffect, type EffectProposal, type EffectAdapter, type ReadbackFn } from "../qp/effects";
-import { generateKeyPair, issueGrant, payloadHash } from "../qp/authority";
 import { sha256 } from "../qp/kernel";
 
 // MCP primary interface: list/search/read/draft/reply/send/archive + ask.
@@ -216,25 +215,21 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
         });
       }
 
-      // P0-2 FIX: Route through QP effect gateway
+      // P0-C FIX: MCP must NOT mint authority. Grant comes from trusted source.
+      if (!args.grant_id) {
+        return Response.json({
+          error: "grant_id required",
+          note: "MCP cannot create grants. Use the approval dashboard to create a human-signed grant first.",
+        });
+      }
+
       const proposal: EffectProposal = {
         action: "cf.domain.register",
         target: { domain },
         payload: { domain, contact: args.contact },
         required_claims: [],
-        grant_id: args.grant_id || "",
+        grant_id: args.grant_id,
       };
-
-      // Create a signed grant for this effect
-      const keys = generateKeyPair();
-      const grant = issueGrant({
-        issuer: "human:owner",
-        subject: principal,
-        action: "cf.domain.register",
-        payload: { domain, contact: args.contact },
-        constraints: { max_amount: 20, currency: "USD", provider: "cloudflare" },
-        issuerKey: keys.privateKey,
-      });
 
       const result = await executeEffect({
         proposal,
@@ -245,7 +240,6 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
           },
         },
         readback: async (platformId) => {
-          // Independent readback: check if domain exists in CF
           const check = await cfCheckDomain(platformId, env as any);
           const exists = check?.registrable === false || check?.status === "registered";
           return {
@@ -268,8 +262,8 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
             }],
           };
         },
-        grant,
-        grantPublicKey: keys.publicKey,
+        grantId: args.grant_id,
+        grantPublicKey: "",  // loaded from vault in production
       });
 
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")

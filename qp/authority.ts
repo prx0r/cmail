@@ -43,7 +43,7 @@ export function issueGrant(params: {
   const now = new Date().toISOString();
   const ttl = params.ttlSeconds || 3600;
   const expires = new Date(Date.now() + ttl * 1000).toISOString();
-  const nonce = randomBytes(16).toString("hex").toString("hex");
+  const nonce = createHash("sha256").update(String(Date.now()) + String(Math.random())).digest("hex").slice(0, 32);
   const payloadHash = createHash("sha256").update(JSON.stringify(params.payload)).digest("hex");
 
   const grantBody = {
@@ -61,7 +61,10 @@ export function issueGrant(params: {
 
   // Sign the canonical body
   const canonical = JSON.stringify(grantBody, Object.keys(grantBody).sort());
-  const signature = sign(undefined as any, Buffer.from(canonical, "utf-8"), params.issuerKey).toString("hex");
+  const { createSign } = require("crypto");
+  const signObj = createSign("sha256");
+  signObj.update(canonical);
+  const signature = signObj.sign(params.issuerKey).toString("hex");
 
   const id = "grant:" + createHash("sha256").update(canonical).digest("hex").slice(0, 16);
 
@@ -121,12 +124,10 @@ export function validateGrant(
   const canonical = JSON.stringify(grantBody, Object.keys(grantBody).sort());
 
   try {
-    const valid = verify(
-      undefined as any,
-      Buffer.from(canonical, "utf-8"),
-      issuerPublicKey,
-      Buffer.from(grant.signature, "hex")
-    );
+    const { createVerify } = require("crypto");
+    const verifyObj = createVerify("sha256");
+    verifyObj.update(canonical);
+    const valid = verifyObj.verify(issuerPublicKey, Buffer.from(grant.signature, "hex"));
     if (!valid) return { valid: false, reason: "signature invalid" };
   } catch (e: any) {
     return { valid: false, reason: `signature verification failed: ${e.message}` };
