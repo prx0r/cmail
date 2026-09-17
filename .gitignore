@@ -8,6 +8,6 @@ dist-cli/
 package-lock.json
 
 # Generated evidence bundles (receipts)
-receipts/
+/receipts/
 # Temporary proof artifacts
 /tmp/
