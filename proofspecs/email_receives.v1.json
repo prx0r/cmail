@@ -1,0 +1,67 @@
+{
+  "protocol": "qp/1",
+  "spec_id": "email_receives",
+  "version": 1,
+  "description": "Exact address can receive fresh externally-originated message through production route",
+  "claim_schema_hash": "sha256:email_receives_schema",
+  "evidence_schema_hash": "sha256:email_roundtrip_schema",
+  "actuality_dag": ["judge_dns_configured", "judge_route_configured", "judge_nonce_observed"],
+  "judges": [
+    {
+      "id": "judge_dns_configured",
+      "program_hash": "sha256:judgeDnsConfigured",
+      "runtime_hash": "node:20",
+      "config_hash": "sha256:default",
+      "dependencies_hash": "sha256:none",
+      "bundle_hash": ""
+    },
+    {
+      "id": "judge_route_configured",
+      "program_hash": "sha256:judgeRouteConfigured",
+      "runtime_hash": "node:20",
+      "config_hash": "sha256:default",
+      "dependencies_hash": "sha256:none",
+      "bundle_hash": ""
+    },
+    {
+      "id": "judge_nonce_observed",
+      "program_hash": "sha256:judgeNonceObserved",
+      "runtime_hash": "node:20",
+      "config_hash": "sha256:default",
+      "dependencies_hash": "sha256:none",
+      "bundle_hash": ""
+    }
+  ],
+  "gates": [
+    { "id": "all_judges_pass", "program_hash": "sha256:all_judges_pass", "required": true },
+    { "id": "evidence_fresh", "program_hash": "sha256:evidence_fresh", "required": true }
+  ],
+  "freshness": {
+    "dns_answer": 3600,
+    "routing_rule": 3600,
+    "email_roundtrip": 600
+  },
+  "provenance_policy_hash": "sha256:standard",
+  "independence_policy_hash": "sha256:independent_sender_required",
+  "transition_program_hash": "sha256:resolve",
+  "authority_policy_hash": "sha256:none",
+  "proof_requirement": "TRUE",
+  "rules": {
+    "TRUE": "QP nonce N observed in exact mailbox A within freshness bounds AND dns_configured AND email_route_configured are TRUE",
+    "FALSE": "only decisive bounded negative (e.g. authenticated terminal bounce if spec accepts that as falsifier)",
+    "UNKNOWN": "timeout without decisive negative, sender failure, probe failure, outage, ambiguity",
+    "critical": [
+      "Infrastructure-only checks cannot establish email_receives=TRUE",
+      "Need actual nonce round-trip, not just MX/routing verification",
+      "Probe must query exact mailbox, never global token search"
+    ]
+  },
+  "evidence_requirements": [
+    "dns_configured and email_route_configured are TRUE",
+    "QP generates cryptographically random nonce N",
+    "Independent sender sends N to exact A",
+    "cmail receives/indexes message",
+    "Probe queries exact mailbox A, never global token search",
+    "Evidence binds A, N, sender, provider/raw message ID, timestamps and raw-message hash"
+  ]
+}

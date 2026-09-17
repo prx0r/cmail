@@ -1,0 +1,34 @@
+{
+  "protocol": "qp/1",
+  "spec_id": "domain_available",
+  "version": 1,
+  "description": "Exact registrar/provider reports exact domain as registrable",
+  "claim_schema_hash": "sha256:domain_available_schema",
+  "evidence_schema_hash": "sha256:registrar_readback_schema",
+  "actuality_dag": ["judge_registrar_available"],
+  "judges": [
+    {
+      "id": "judge_registrar_available",
+      "program_hash": "sha256:judgeRegistrarAvailable",
+      "runtime_hash": "node:20",
+      "config_hash": "sha256:default",
+      "dependencies_hash": "sha256:none",
+      "bundle_hash": ""
+    }
+  ],
+  "gates": [
+    { "id": "evidence_fresh", "program_hash": "sha256:evidence_fresh", "required": true },
+    { "id": "all_judges_pass", "program_hash": "sha256:all_judges_pass", "required": true }
+  ],
+  "freshness": { "registrar_readback": 300 },
+  "provenance_policy_hash": "sha256:standard",
+  "independence_policy_hash": "sha256:none",
+  "transition_program_hash": "sha256:resolve",
+  "proof_requirement": "TRUE",
+  "rules": {
+    "TRUE": "provider explicitly reports domain available/registrable AND evidence is fresh",
+    "FALSE": "provider explicitly reports domain taken/not registrable",
+    "UNKNOWN": "timeout, auth error, malformed response, unsupported TLD, rate limit, missing credentials",
+    "critical": "DNS NXDOMAIN is never sufficient for TRUE"
+  }
+}

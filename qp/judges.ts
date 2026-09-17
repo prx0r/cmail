@@ -160,16 +160,30 @@ export function judgeOAuthAuthorized(evidence: Evidence[]): JudgeResult {
  * Returns TRUE only if ALL judge results are TRUE
  */
 export function gateAllJudgesPass(evidence: Evidence[], judgeResults: JudgeResult[]): GateResult {
-  const failed = judgeResults.filter((r) => r.actuality !== "TRUE");
-  if (failed.length === 0) {
-    return { gate_id: "all_judges_pass", result: "TRUE", proof: "all judges returned TRUE", evidence_ids: [] };
+  const hasFalse = judgeResults.some((r) => r.actuality === "FALSE");
+  const hasUnknown = judgeResults.some((r) => r.actuality === "UNKNOWN");
+
+  if (hasFalse) {
+    const failed = judgeResults.filter((r) => r.actuality === "FALSE");
+    return {
+      gate_id: "all_judges_pass",
+      result: "FALSE",
+      proof: `failed judges: ${failed.map((f) => `${f.judge_id}=FALSE`).join(", ")}`,
+      evidence_ids: failed.flatMap((f) => f.evidence_ids),
+    };
   }
-  return {
-    gate_id: "all_judges_pass",
-    result: "FALSE",
-    proof: `failed judges: ${failed.map((f) => `${f.judge_id}=${f.actuality}`).join(", ")}`,
-    evidence_ids: failed.flatMap((f) => f.evidence_ids),
-  };
+
+  if (hasUnknown) {
+    const unknowns = judgeResults.filter((r) => r.actuality === "UNKNOWN");
+    return {
+      gate_id: "all_judges_pass",
+      result: "UNKNOWN",
+      proof: `unknown judges: ${unknowns.map((u) => u.judge_id).join(", ")}`,
+      evidence_ids: unknowns.flatMap((u) => u.evidence_ids),
+    };
+  }
+
+  return { gate_id: "all_judges_pass", result: "TRUE", proof: "all judges returned TRUE", evidence_ids: [] };
 }
 
 /**

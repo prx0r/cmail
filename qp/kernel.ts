@@ -311,16 +311,18 @@ export function replayReceipt(
   // 7. Recompute gate results
   const gateResults = gates.map((gate) => gate(evidence, judgeResults));
 
-  // 8. Check all required gates pass
-  const requiredGates = spec.gates.filter((g) => g.required);
-  for (const rg of requiredGates) {
-    const gr = gateResults.find((g) => g.gate_id === rg.id);
-    if (!gr || gr.result !== "TRUE") {
-      return {
-        pass: false,
-        reason: `required gate ${rg.id} did not pass: ${gr?.result ?? "missing"}`,
-        recomputed: { actuality, gate_results: gateResults, state_after_root: "", receipt_hash: "" },
-      };
+  // 8. Check all required gates pass (only when actuality is TRUE)
+  if (actuality === "TRUE") {
+    const requiredGates = spec.gates.filter((g) => g.required);
+    for (const rg of requiredGates) {
+      const gr = gateResults.find((g) => g.gate_id === rg.id);
+      if (!gr || gr.result !== "TRUE") {
+        return {
+          pass: false,
+          reason: `required gate ${rg.id} did not pass: ${gr?.result ?? "missing"}`,
+          recomputed: { actuality, gate_results: gateResults, state_after_root: "", receipt_hash: "" },
+        };
+      }
     }
   }
 
@@ -374,7 +376,11 @@ export function sha256(data: string): string {
 }
 
 export function canonical(obj: any): string {
-  return JSON.stringify(obj, Object.keys(obj).sort());
+  if (obj === null || obj === undefined) return String(obj);
+  if (typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return "[" + obj.map(canonical).join(",") + "]";
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + canonical(obj[k])).join(",") + "}";
 }
 
 export function merkleRoot(items: string[]): string {
