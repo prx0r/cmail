@@ -136,7 +136,7 @@ export async function generateRoundTripProof(params: {
       collector_id: "email-roundtrip-probe",
       collector_program_hash: sha256("email-roundtrip-probe"),
       collector_runtime_hash: "node:20",
-      response_hash: JSON.stringify({
+      response_payload: JSON.stringify({
         token,
         address: params.address,
         message_id: receivedMessageId,
@@ -157,7 +157,8 @@ export async function generateRoundTripProof(params: {
       collector_id: "email-roundtrip-probe",
       collector_program_hash: sha256("email-roundtrip-probe"),
       collector_runtime_hash: "node:20",
-      response_hash: JSON.stringify({ message_id: messageId, sent_at: sentAt }),
+      response_payload: JSON.stringify({ message_id: messageId, sent_at: sentAt }),
+      response_hash: createHash("sha256").update(JSON.stringify({ message_id: messageId, sent_at: sentAt })).digest("hex"),
       normalized_payload_hash: sha256(messageId + sentAt),
       independence_group: "email-send",
     },

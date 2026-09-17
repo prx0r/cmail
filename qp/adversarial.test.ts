@@ -21,7 +21,7 @@ function test(name: string, ok: boolean, detail?: string) {
 // ─── Test Helpers ────────────────────────────────────────
 
 function makeSpec(): ProofSpec {
-  return {
+  return { response_payload: content, response_hash: sha256(content),
     protocol: "qp/1", spec_id: "test", version: 1,
     claim_schema_hash: sha256("schema"), evidence_schema_hash: sha256("ev_schema"),
     actuality_dag: ["dns_valid_v1", "cf_zone_active_v1"],

@@ -5,6 +5,7 @@ import { createTask, getTask, listTasks, deliverTask, completeTask, isReady } fr
 import { startPipeline } from "./pipeline";
 import { executeEffect, type EffectProposal, type EffectAdapter, type ReadbackFn } from "../qp/effects";
 import { generateKeyPair, issueGrant, payloadHash } from "../qp/authority";
+import { sha256 } from "../qp/kernel";
 
 // MCP primary interface: list/search/read/draft/reply/send/archive + ask.
 // Drafts are default; SEND requires explicit permission + human confirm.
@@ -93,7 +94,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
     case "email.reply": {
       // auto-draft only; never auto-send
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
-        .bind(actor, tool, args.to ?? args.message_id ?? "", (args.subject ?? "") + " :: " + (args.body ?? "").slice(0, 500)).run();
+        .bind(principal, tool, args.to ?? args.message_id ?? "", (args.subject ?? "") + " :: " + (args.body ?? "").slice(0, 500)).run();
       return Response.json({ ok: true, drafted: true, note: "draft saved; explicit confirm required to send" });
     }
     case "email.send":
@@ -105,14 +106,14 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
           if (args.draft_id) {
             await env.DB.prepare("UPDATE drafts SET status='sent' WHERE id=?").bind(args.draft_id).run();
           }
-          await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)").bind(actor, "send", args.to ?? "", args.subject ?? "").run();
+          await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)").bind(principal, "send", args.to ?? "", args.subject ?? "").run();
           return Response.json({ ok: true, sent: true });
         } catch (e: any) {
           return Response.json({ ok: false, sent: false, error: `send failed: ${String(e?.message ?? e).slice(0, 200)}` }, { status: 502 });
         }
       }
       // Outbound disabled until Workers Paid + SENDER binding: report honestly, never fake a send.
-      await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)").bind(actor, "send_blocked", args.to ?? "", args.subject ?? "").run();
+      await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)").bind(principal, "send_blocked", args.to ?? "", args.subject ?? "").run();
       return Response.json({ ok: false, sent: false, error: "outbound disabled — enable Workers Paid and the SENDER binding" });
     case "email.ask": {
       // semantic helper: search + summarize via Workers AI.
@@ -290,7 +291,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       }
       const result = await cfWireEmail(domain, worker, env as any);
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
-        .bind(actor, "wire_email", domain, JSON.stringify(result)).run();
+        .bind(principal, "wire_email", domain, JSON.stringify(result)).run();
       return Response.json({ mode: "executed", ...result });
     }
     case "name.phone_search": {
@@ -316,7 +317,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
       }
       const result = await telnyxPurchaseNumber(phone, connId, env as any);
       await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
-        .bind(actor, "phone_purchase", phone, JSON.stringify(result)).run();
+        .bind(principal, "phone_purchase", phone, JSON.stringify(result)).run();
       return Response.json({ mode: "executed", ...result });
     }
     case "name.phone_recommend": {
@@ -343,7 +344,7 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
           }));
         });
         await env.DB.prepare("INSERT INTO audit_log (actor,action,target,detail) VALUES (?,?,?,?)")
-          .bind(actor, "phone_recommend", country, JSON.stringify(result.architecture)).run();
+          .bind(principal, "phone_recommend", country, JSON.stringify(result.architecture)).run();
         return Response.json({ ...result, country, purchasable: false });
       } catch (e: any) {
         return Response.json({ error: `recommend failed: ${String(e?.message ?? e).slice(0, 200)}` }, { status: 502 });
@@ -480,10 +481,10 @@ export async function handleMcp(req: Request, env: Env): Promise<Response> {
   }
 }
 
-async function getPerms(env: Env, actor: string): Promise<string[]> {
-  if (actor === "owner") return ["ADMIN"];
+async function getPerms(env: Env, principal: string): Promise<string[]> {
+  if (principal.includes("admin")) return ["ADMIN"];
   try {
-    const row = await env.DB.prepare("SELECT permissions FROM mailboxes WHERE id=?").bind(actor).first();
+    const row = await env.DB.prepare("SELECT permissions FROM mailboxes WHERE id=?").bind(principal).first();
     const perms = JSON.parse((row?.permissions as string) ?? '["READ","DRAFT"]');
     return Array.isArray(perms) ? perms : ["READ", "DRAFT"];
   } catch {

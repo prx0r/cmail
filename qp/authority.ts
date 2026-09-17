@@ -17,8 +17,8 @@ export interface KeyPair {
 export function generateKeyPair(): KeyPair {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   return {
-    publicKey: publicKey.export({ type: "spki", format: "pem" }),
-    privateKey: privateKey.export({ type: "pkcs8", format: "pem" }),
+    publicKey: String(publicKey.export({ type: "spki", format: "pem" })),
+    privateKey: String(privateKey.export({ type: "pkcs8", format: "pem" })),
   };
 }
 
@@ -43,7 +43,7 @@ export function issueGrant(params: {
   const now = new Date().toISOString();
   const ttl = params.ttlSeconds || 3600;
   const expires = new Date(Date.now() + ttl * 1000).toISOString();
-  const nonce = randomBytes(16).toString("hex");
+  const nonce = randomBytes(16).toString("hex").toString("hex");
   const payloadHash = createHash("sha256").update(JSON.stringify(params.payload)).digest("hex");
 
   const grantBody = {
@@ -61,7 +61,7 @@ export function issueGrant(params: {
 
   // Sign the canonical body
   const canonical = JSON.stringify(grantBody, Object.keys(grantBody).sort());
-  const signature = sign(null, Buffer.from(canonical, "utf-8"), params.issuerKey).toString("hex");
+  const signature = sign(undefined as any, Buffer.from(canonical, "utf-8"), params.issuerKey).toString("hex");
 
   const id = "grant:" + createHash("sha256").update(canonical).digest("hex").slice(0, 16);
 
@@ -122,7 +122,7 @@ export function validateGrant(
 
   try {
     const valid = verify(
-      null,
+      undefined as any,
       Buffer.from(canonical, "utf-8"),
       issuerPublicKey,
       Buffer.from(grant.signature, "hex")

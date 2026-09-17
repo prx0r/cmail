@@ -108,7 +108,7 @@ export async function refreshToken(
     throw new Error(`Token refresh failed: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   return {
     ...data,
     refresh_token: refreshToken, // Google doesn't return new refresh token
@@ -124,7 +124,7 @@ export async function getChannels(accessToken: string): Promise<YouTubeChannel[]
   );
 
   if (!response.ok) throw new Error(`Failed to fetch channels: ${response.statusText}`);
-  const data = await response.json();
+  const data: any = await response.json();
   return (data.items || []).map((ch: any) => ({
     id: ch.id,
     title: ch.snippet?.title || "Unnamed",
@@ -147,7 +147,7 @@ export async function readbackVideo(
   );
 
   if (!response.ok) return null;
-  const data = await response.json();
+  const data: any = await response.json();
   const video = data.items?.[0];
   if (!video) return null;
 
@@ -173,7 +173,7 @@ export async function readbackChannel(
   );
 
   if (!response.ok) return { exists: false };
-  const data = await response.json();
+  const data: any = await response.json();
   const ch = data.items?.[0];
   if (!ch) return { exists: false };
 
@@ -208,7 +208,7 @@ export async function getAnalytics(
   );
 
   if (!response.ok) return [];
-  const data = await response.json();
+  const data: any = await response.json();
   const rows = data.rows || [];
   const cols = data.columnHeaders || [];
 

@@ -108,7 +108,7 @@ export function generateProof(
   parentProofHash?: string,
 ): CapacityProof | null {
   const cap = capacities.get(capId);
-  if (!null) return null;
+  if (!cap) return null;
 
   const result: VerifyResult = verify(cap!.type, evidence);
 
@@ -125,14 +125,14 @@ export function generateProof(
     depends_on: parentProofHash,
     chain,
     verifier: verifierName,
-    pass: result.pass,
+    pass: result.actuality === "TRUE",
     reason: result.reason,
     created_at: new Date().toISOString(),
   };
 
   // Update capacity
   cap!.proof = proof;
-  cap!.status = result.pass ? "active" : "failed";
+  cap!.status = result.actuality === "TRUE" ? "active" : "failed";
   cap!.verified_at = Date.now();
 
   return proof;
