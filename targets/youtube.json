@@ -4,41 +4,128 @@
   "category": "social",
   "platform": "google",
   "autonomy": "agent_guaranteed",
-  "requires_human": false,
   "captcha_risk": "medium",
-  "note": "YouTube channel creation via Google account. Google may require phone verification.",
-  "cost": {
-    "min": 0,
-    "max": 0,
-    "currency": "USD",
-    "period": "month",
-    "free_variant": true,
-    "note": "Free. YouTube Data API has 10,000 unit/day quota."
-  },
-  "depends_on": [
-    "target:email",
-    "target:phone"
-  ],
-  "capabilities_required": [
-    "receive_email",
-    "can_verify_phone"
-  ],
-  "capabilities_granted": [
-    "have_handle:youtube",
-    "have_google_account"
-  ],
+  "note": "YouTube channel via Google account. Two APIs: Data API v3 (content) + Analytics API (metrics).",
+
+  "cost": { "min": 0, "max": 0, "currency": "USD", "period": "month", "free_variant": true },
+
+  "depends_on": ["target:email", "target:phone"],
+  "capabilities_required": ["receive_email", "can_verify_phone"],
+  "capabilities_granted": ["have_handle:youtube", "have_google_account", "have_youtube_api", "have_youtube_analytics"],
+
   "stack": {
     "provider": "google",
     "apis": {
-      "youtube": "YouTube Data API v3",
-      "accounts": "Google Accounts (no public API \u2014 Playwright)"
+      "data_api": "YouTube Data API v3 — upload, manage, search videos",
+      "analytics_api": "YouTube Analytics API — views, subscribers, revenue",
+      "reporting_api": "YouTube Reporting API — bulk reports for data warehouses"
     },
-    "auth": "Google OAuth 2.0 (from account creation)",
+    "auth": "Google OAuth 2.0",
     "docs": [
-      "https://developers.google.com/youtube/v3",
-      "https://developers.google.com/youtube/create-channel"
+      "https://developers.google.com/youtube/v3/getting-started",
+      "https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps",
+      "https://developers.google.com/youtube/analytics/channel_reports",
+      "https://developers.google.com/youtube/analytics/reference/reports/query"
     ]
   },
+
+  "api_setup": {
+    "step_1": {
+      "action": "Create Google Cloud Project",
+      "url": "https://console.cloud.google.com/",
+      "instructions": [
+        "Go to console.cloud.google.com",
+        "Click 'Select a project' → 'New Project'",
+        "Name it (e.g. 'cmail-youtube')",
+        "Click 'Create'"
+      ]
+    },
+    "step_2": {
+      "action": "Enable YouTube APIs",
+      "url": "https://console.cloud.google.com/apis/library",
+      "instructions": [
+        "Go to APIs & Services → Library",
+        "Search 'YouTube Data API v3' → Enable",
+        "Search 'YouTube Analytics API' → Enable",
+        "Search 'YouTube Reporting API' → Enable (optional)"
+      ]
+    },
+    "step_3": {
+      "action": "Create OAuth 2.0 Credentials",
+      "url": "https://console.cloud.google.com/apis/credentials",
+      "instructions": [
+        "Go to APIs & Services → Credentials",
+        "Click '+ Create Credentials' → OAuth client ID",
+        "Application type: 'Desktop app' (for agent) or 'Web application' (for dashboard)",
+        "Name it (e.g. 'cmail-youtube-oauth')",
+        "Download the JSON file → store as client_secret.json",
+        "Note: Client ID and Client Secret"
+      ]
+    },
+    "step_4": {
+      "action": "First Authorization (one-time)",
+      "instructions": [
+        "Agent opens OAuth consent URL in browser",
+        "User logs in with Google account (agents@{domain})",
+        "User grants permissions",
+        "Google returns auth code",
+        "Agent exchanges code for access_token + refresh_token",
+        "Store refresh_token in vault — never expires (unless revoked)"
+      ],
+      "scopes": [
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/yt-analytics.readonly",
+        "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"
+      ]
+    },
+    "step_5": {
+      "action": "Create YouTube Channel",
+      "instructions": [
+        "After Google account exists, channel must be created",
+        "Method A: Navigate to youtube.com → click 'Create a channel'",
+        "Method B: YouTube Data API returns 'youtubeSignupRequired' error → handle via WebView",
+        "Channel is now live and API-ready"
+      ]
+    }
+  },
+
+  "analytics": {
+    "description": "YouTube Analytics API provides real-time and historical metrics",
+    "key_metrics": {
+      "views": "Total video views",
+      "subscribers": "Net subscriber change",
+      "watch_time": "Estimated minutes watched",
+      "revenue": "Estimated earnings (needs monetization)",
+      "ctr": "Click-through rate on thumbnails",
+      "audience_retention": "How long viewers watch",
+      "traffic_sources": "Where views come from (search, suggested, external)",
+      "demographics": "Viewer age, gender, geography"
+    },
+    "sample_query": {
+      "endpoint": "GET https://youtubeanalytics.googleapis.com/v2/reports",
+      "params": {
+        "ids": "channel==MINE",
+        "startDate": "2026-01-01",
+        "endDate": "2026-09-17",
+        "metrics": "views,likes,subscribersGained,estimatedMinutesWatched",
+        "dimensions": "day",
+        "sort": "-day"
+      },
+      "note": "Requires OAuth with yt-analytics.readonly scope"
+    },
+    "report_types": [
+      "channel_basic_a3 — views, watch time, subscribers by day",
+      "channel_traffic_source_a3 — where views come from",
+      "channel_demographics_a1 — viewer age/gender",
+      "channel_sharing_service_a2 — social sharing",
+      "channel_reach_basic_a1 — impressions + CTR",
+      "video_basic_a2 — per-video views, likes, comments",
+      "video_traffic_source_a2 — per-video traffic sources"
+    ]
+  },
+
   "tasks": [
     {
       "id": "task:signup_google",
@@ -50,49 +137,51 @@
         "url": "https://accounts.google.com/signup",
         "steps": [
           "fill first_name + last_name",
-          "fill username: {handle} or agents@{domain}",
+          "fill username: agents@{domain} or {handle}@gmail.com",
           "fill password: {generated_password}",
           "phone verification: USE TELNYX SMS",
           "accept terms"
         ]
       },
-      "verification": {
-        "method": "email + sms",
-        "email_inbox": "agents@{domain}",
-        "sms_number": "{phone_number}",
-        "sms_provider": "telnyx"
-      },
-      "on_captcha": {
-        "action": "pause_and_notify_human",
-        "message": "Google signup has a captcha. Please complete this step manually.",
-        "url": "https://accounts.google.com/signup"
-      }
+      "verification": { "method": "email+sms", "email_inbox": "agents@{domain}", "sms_provider": "telnyx" },
+      "on_captcha": { "action": "pause_and_notify_human", "message": "Google signup has a captcha. Complete manually.", "url": "https://accounts.google.com/signup" }
     },
     {
       "id": "task:create_youtube_channel",
       "type": "agent",
-      "depends_on": [
-        "task:signup_google"
-      ],
-      "method": "api",
-      "api_call": {
-        "service": "YouTube Data API v3",
-        "method": "POST /youtube/v3/channels?part=snippet",
-        "note": "Channel created on first upload or via youtubeSignupRequired error flow"
+      "depends_on": ["task:signup_google"],
+      "method": "api_or_playwright",
+      "note": "Channel creation: either navigate to youtube.com/create_channel or handle youtubeSignupRequired error from API"
+    },
+    {
+      "id": "task:setup_google_cloud_project",
+      "type": "agent",
+      "depends_on": ["task:signup_google"],
+      "method": "playwright",
+      "browser_action": {
+        "url": "https://console.cloud.google.com/",
+        "steps": [
+          "create new project",
+          "enable YouTube Data API v3",
+          "enable YouTube Analytics API",
+          "create OAuth 2.0 credentials (Desktop app type)",
+          "download client_secret.json"
+        ]
+      }
+    },
+    {
+      "id": "task:authorize_oauth",
+      "type": "agent",
+      "depends_on": ["task:setup_google_cloud_project"],
+      "method": "oauth_flow",
+      "oauth_flow": {
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scopes}&access_type=offline",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scopes": ["youtube", "youtube.upload", "youtube.readonly", "yt-analytics.readonly"],
+        "store": "refresh_token in agent-vault"
       }
     }
   ],
-  "gates": [
-    "google_account_created_v1",
-    "channel_created_v1",
-    "handle_owned_v1"
-  ],
-  "escalation_rules": {
-    "if_captcha": "pause_and_notify_human",
-    "if_phone_verify_required": "use_telnyx_sms",
-    "if_sms_fails": "pause_and_notify_human",
-    "never": [
-      "retry_captcha_automatically"
-    ]
-  }
+
+  "gates": ["google_account_created_v1", "channel_created_v1", "handle_owned_v1", "oauth_authorized_v1"]
 }
