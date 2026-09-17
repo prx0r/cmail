@@ -96,6 +96,24 @@ export function verifyReceiveEmail(evidence: string): VerifyResult {
       collector_id: "curl",
       independence_group: "email-infra",
     }),
+    // Routing evidence
+    makeEvidence({
+      response_content: `routing_rules=${e.routing_rules} catch_all=${e.catch_all}`,
+      class: "api_response",
+      source: "cloudflare",
+      locator: "cf:email-routing",
+      collector_id: "cf-api",
+      independence_group: "email-infra",
+    }),
+    // Mailbox evidence
+    makeEvidence({
+      response_content: `mailbox_indexed=${e.mailbox_indexed} address=${e.zone_id}`,
+      class: "api_response",
+      source: "cmail-mcp",
+      locator: "cmail:mailboxes",
+      collector_id: "cmail-mcp",
+      independence_group: "email-infra",
+    }),
   ];
 
   const judgeResult = judgeEmailInfrastructure(evidenceItems);

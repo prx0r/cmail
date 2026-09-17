@@ -63,3 +63,9 @@ registrar-only truth, checked-set ledger. Deploy (wrangler + CF creds) H-gated.
 - `/root/ab/businesses/_naming/receipts/` — run receipts + checked-set ledger
 - `/tmp/check_names.py`, `check_c.py`, `check_trending.py`, `check_vibes.py` — batch scripts
 - `/root/ab/intelligence/gcp_apis.json`, `gcp_api_guide.json` — 531-API catalog + ratings
+
+## Addendum: a- prefix hunt (2026-09-11)
+46 checked, 35 registrar-confirmed free ($5.30). Hyphenated namespace
+essentially unmined — squatters don't bother. Standouts: a-sue, a-malorie,
+a-spark, a-calls, a-leads, a-quotes, a-fixes, a-knock, a-door. Full list in
+session transcript. Rule learned: **hyphens dodge squatters.**

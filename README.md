@@ -19,7 +19,106 @@ Pick a name → check handles across all platforms → buy domain → wire email
 
 ---
 
-## How It Works
+## The QP Proof System
+
+Every capacity produces a QP receipt — deterministic, verifiable, append-only.
+
+```
+Agent proposes → QP validates authority → executes via adapter →
+independent readback → judges evaluate → TRUE/FALSE/UNKNOWN →
+TransitionReceipt → canonical state
+```
+
+**Key invariant:** Postiz says success → that's evidence. QP asks the platform independently → that's proof.
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Kernel | `qp/kernel.ts` | Actuality, Claim, ProofSpec, Receipt, Replay |
+| Judges | `qp/judges.ts` | 6 judges + 3 gates (TRUE/FALSE/UNKNOWN) |
+| Authority | `qp/authority.ts` | Ed25519 grants, validation, replay prevention |
+| Identity | `qp/identity.ts` | Program identity (source hash, git SHA) |
+| Edges | `qp/edges.ts` | Typed dependency graph (REQUIRES/ENABLES/etc) |
+| Probes | `qp/probes/` | Email round-trip nonce proof |
+| Social | `qp/social/` | Executor interface + YouTube adapter |
+| Tests | `qp/adversarial.test.ts` | 26 adversarial tests |
+
+---
+
+## MCP Tools (37 total)
+
+### Email (12)
+`email.list_domains`, `email.list_mailboxes`, `email.inbox`, `email.search`, `email.read`, `email.thread`, `email.draft`, `email.reply`, `email.send`, `email.archive`, `email.label`, `email.needs_reply`, `email.ask`
+
+### Name (11)
+`name.check`, `name.verify_domain`, `name.check_handles`, `name.search`, `name.social`, `name.bulk_check`, `name.bulk_history`, `name.cf_check`, `name.cf_purchase`, `name.wire_email`
+
+### Phone (4)
+`name.phone_search`, `name.phone_list`, `name.phone_purchase`, `name.phone_recommend`, `name.read_sms`
+
+### Task (5) + Pipeline (2)
+`task.create`, `task.list`, `task.get`, `task.deliver`, `task.complete`, `pipeline.start`, `pipeline.status`
+
+### QP Capacity (3) ← NEW
+`capacity.list`, `capacity.verify`, `mission.status`
+
+---
+
+## ProofSpecs (13)
+
+```
+proofspecs/
+  domain_available.v1.json      P1: registrar reports domain registrable
+  domain_owned.v1.json          P2: domain owned in account (requires authority)
+  dns_configured.v1.json        P3: DNS matches expected config
+  email_route_configured.v1.json P4: routing rule covers address
+  email_receives.v1.json        P5: nonce round-trip proof
+  phone_owned.v1.json           P6: phone provisioned (requires authority)
+  handle_available.v1.json      P8: platform reports handle unassigned
+  account_owned.v1.json         P9: credential authenticates as account
+  handle_bound.v1.json          P10: account bound to handle
+  oauth_authorized.v1.json      P11: active auth with required scopes
+  can_post.v1.json              P12: authorization permits write
+  email_send_accepted.v1.json   P13: provider accepted payload
+  email_delivered.v1.json       P14: independent delivery confirmation
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    setup.social                          │
+├─────────────────────────────────────────────────────────┤
+│  QP KERNEL (qp/)                                       │
+│  ├── kernel.ts       Actuality + Claim + Receipt        │
+│  ├── judges.ts       6 judges + 3 gates                 │
+│  ├── authority.ts    Ed25519 grants                     │
+│  ├── identity.ts     Program identity                   │
+│  ├── edges.ts        Typed dependency graph             │
+│  └── social/         Executor interface + adapters      │
+│                                                          │
+│  TARGETS (targets/*.json)                               │
+│  ├── domain, email, phone (infrastructure)              │
+│  └── youtube, instagram, tiktok, x, bluesky (social)   │
+│                                                          │
+│  RUNTIME (src/)                                         │
+│  ├── mcp.ts          37 MCP tools                       │
+│  ├── targets.ts      Dependency resolver + costs        │
+│  ├── verifiers.ts    QP-backed verifiers                │
+│  ├── social-rules.ts Per-platform username rules        │
+│  └── capacity.ts     Capacity registry                  │
+│                                                          │
+│  PROOFS (proofspecs/*.json)                             │
+│  └── 13 immutable ProofSpecs                            │
+│                                                          │
+│  INFRASTRUCTURE                                         │
+│  ├── Cloudflare Registrar + Email Routing               │
+│  ├── cmail Worker (D1 + R2)                             │
+│  ├── Telnyx (phone)                                     │
+│  └── Apify (handle checking)                            │
+└─────────────────────────────────────────────────────────┘
+```
 
 ```
 SEED NAME → HANDLE CHECK → DOMAIN → EMAIL → ALL SOCIALS (parallel)
