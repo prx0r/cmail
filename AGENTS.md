@@ -10,17 +10,27 @@
 
 Autonomous social identity pipeline. Seed name → handle check → domain → email → all socials. Agent does everything. Human approves purchases.
 
+## The Constitutional Boundary
+
+**QP is the only way to cause consequential effects.** MCP creates proposals + grants. QP executes. No direct provider mutators.
+
+```
+AGENT → proposal + grant → QP EFFECT GATEWAY → adapter → readback → receipt
+```
+
+The effect gateway (`qp/effects.ts`) is the constitutional boundary. Everything flows through it.
+
 ## How the System Works
 
 ### The Dependency Chain
 
 ```
 Step 1: 👤 BUY DOMAIN (human: "BUY {domain}")
-  ↓ capacity: have_domain
+  ↓ capacity: have_domain (QP receipt)
 Step 2: 🟢 EMAIL + 👤 PHONE (parallel)
-  ↓ capacity: receive_email, have_phone
+  ↓ capacity: receive_email, have_phone (QP receipts)
 Step 3: 🟢 ALL SOCIALS (parallel)
-  ↓ capacity: have_handle:*
+  ↓ capacity: have_handle:* (QP receipts)
 ```
 
 **Critical:** Steps 2-3 are PARALLEL. Once email + phone exist, ALL socials unlock simultaneously.
@@ -30,58 +40,42 @@ Step 3: 🟢 ALL SOCIALS (parallel)
 Every capacity produces a QP receipt — deterministic, verifiable, append-only.
 
 ```
-CAPACITY: have_domain(privately.win)
-  EVIDENCE: dig MX + CF zone API
-  GATES: [dns_valid_v1, cf_zone_active_v1]
-  PROOF_LEVEL: V7
-  → GRANT: receive_email(*@privately.win)
-
-CAPACITY: receive_email(agents@privately.win)
-  EVIDENCE: verify-capacity.sh (7 layers)
-  GATES: [email_infrastructure_v1, routing_catchall_v1, worker_live_v1, mailbox_indexed_v1]
-  PROOF_LEVEL: V7
-  → GRANT: can_signup_service(agents@privately.win, *)
+Agent proposes → QP validates authority → executes via adapter →
+independent readback → judges evaluate → TRUE/FALSE/UNKNOWN →
+TransitionReceipt → canonical state
 ```
 
-**No self-promotion.** Only gates decide truth. Receipts are the sole path from UNKNOWN → ACTIVE.
+**Key invariant:** Postiz says success → that's evidence. QP asks the platform independently → that's proof.
 
-### The Target System
+### The Effect Gateway
 
-Each platform is a JSON file in `targets/`. The agent reads these to know what to do.
+The ONE entry point for consequential actions:
 
 ```
-targets/
-  domain.json       → Cloudflare domain purchase (human gate)
-  email.json        → Cloudflare Email Routing (full auto)
-  phone.json        → Telnyx phone number (human gate)
-  bluesky.json      → AT Protocol (full auto, no captcha)
-  youtube.json      → Google OAuth + Data API v3 (captcha possible)
-  instagram.json    → Meta Business → Graph API (captcha likely)
-  facebook.json     → Meta bundle (unlocked via Instagram)
-  whatsapp.json     → Meta bundle + phone
-  x.json            → X API v2 (captcha possible)
-  tiktok.json       → Content Posting API (complex captcha)
-  _template.json    → Copy to add new platforms
+MCP creates proposal + grant
+  → executeEffect()
+  → validates grant (Ed25519 signature)
+  → reserves grant (atomic, single-use)
+  → executes via adapter (Postiz/direct)
+  → independent readback (NOT from adapter)
+  → judges readback evidence
+  → settles: TRUE/FALSE/UNKNOWN receipt
 ```
 
-### Autonomy Rules
-
-| Class | Behavior |
-|-------|----------|
-| 🟢 Agent Guaranteed | No captcha, direct API — agent does it |
-| 🟡 Agent Or Human | Captcha possible — agent tries, pauses on captcha |
-| 👤 Human Gate | Purchase — human types confirm text |
-
-**Captcha rule:** Agent NEVER tries to solve captcha. If captcha appears → pause → notify human → human completes → agent resumes.
+No direct provider mutators from MCP. Everything through QP.
 
 ## Standing Laws
 
 1. **NEVER buy without explicit human `confirmed:true`** — domains, phones, sends.
-2. **DNS suggests, registrar decides.** Only `cf_check.registrable:true` is truth.
+2. **DNS lies.** Only `cf_check.registrable:true` is truth.
 3. **No claims without proof.** Every capacity needs a QP receipt.
 4. **Secrets stay safe.** Keys in vault. Never in code.
 5. **Agent attempts, human fallback.** Captcha → pause → notify.
-6. **Parallel after infrastructure.** Email + phone unlock everything at once.
+6. **Parallel after infrastructure.** Email + phone unlock everything.
+7. **QP is constitutional.** No consequential effect bypasses the gateway.
+8. **Postiz is executor, not kernel.** Never trust adapter success state.
+9. **Capabilities, not credentials.** Agents get `social.youtube.channel[UC123].post_video`.
+10. **UNKNOWN never coerces.** Network timeout ≠ FALSE. Missing data ≠ FALSE.
 
 ## Costs
 
@@ -92,57 +86,86 @@ targets/
 | Email | FREE | Cloudflare Email Routing |
 | All socials | FREE | — |
 | **Minimum** | **~$14/yr** | domain + phone |
-| **Without phone** | **~$2/yr** | domain only (Bluesky + npm) |
+| **Without phone** | **~$2/yr** | domain only |
 
-## The Chain in Code
+## Adding New Platforms (QP-Native)
 
+The process is formulaic. One JSON file = agent knows what to do.
+
+### Step 1: Copy template
+```bash
+cp targets/_template.json targets/newplatform.json
+```
+
+### Step 2: Fill in the JSON
+```json
+{
+  "id": "target:newplatform",
+  "name": "New Platform",
+  "captcha_risk": "medium",
+  "depends_on": ["target:email"],
+  "capabilities_granted": ["have_handle:newplatform"],
+  "tasks": [{
+    "id": "task:signup_newplatform",
+    "type": "agent_or_human",
+    "method": "playwright",
+    "captcha": true,
+    "captcha_action": "ESCALATE_TO_HUMAN",
+    "browser_action": {
+      "url": "https://platform.com/signup",
+      "steps": ["fill email", "fill password", "captcha? → pause"]
+    },
+    "verification": { "method": "email", "inbox": "agents@{domain}" }
+  }]
+}
+```
+
+### Step 3: Add QP ProofSpec (if new capacity type)
+```json
+{
+  "protocol": "qp/1",
+  "spec_id": "new_platform_owned",
+  "version": 1,
+  "judges": [{ "id": "judge_new_platform", "program_hash": "..." }],
+  "gates": [{ "id": "all_judges_pass", "required": true }],
+  "freshness": { "platform_readback": 3600 },
+  "proof_requirement": "TRUE"
+}
+```
+
+### Step 4: Add username rules (if new format)
 ```typescript
-// 1. Load targets
-import { loadAllTargets, resolveLayers } from './src/targets';
-const layers = resolveLayers(['target:domain', 'target:email', 'target:phone', 'target:youtube', 'target:instagram', 'target:tiktok', 'target:x']);
-// → [['target:domain'], ['target:email', 'target:phone'], ['target:youtube', 'target:instagram', 'target:tiktok', 'target:x']]
-
-// 2. Check handle availability
-import { findUniversalHandle } from './src/social-rules';
-const best = findUniversalHandle(['mxthartist', 'mxthart']);
-// → { handle: 'mxthartist', valid_on: ALL_PLATFORMS }
-
-// 3. Verify capacity
-bash scripts/verify-capacity.sh privately.win agents@privately.win
-// → VERDICT: CERTIFIED (7/7 layers green)
-
-// 4. Run identity check
-bash scripts/check-identity.sh privatelywin privately.win
-// → Apify: 11 available, Format: 10/10 valid, Domain: $4.18/yr
+// In src/social-rules.ts, add to PLATFORM_RULES:
+{
+  platform: "newplatform",
+  min_length: 3,
+  max_length: 20,
+  allowed_pattern: /^[a-z0-9_]+$/,
+  requires_verification: "email",
+  signup_method: "playwright",
+  captcha_risk: "medium",
+}
 ```
 
-## Secrets (agent-vault oracle)
-
-```
-CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-APIFY_TOKEN, TELNYX_API_KEY
-GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
-GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
-META_APP_ID, META_APP_SECRET, META_ACCESS_TOKEN
-TIKTOK_CLIENT_KEY, TIKTKOK_CLIENT_SECRET
-X_CLIENT_ID, X_CLIENT_SECRET, X_BEARER_TOKEN
-```
+### Step 5: Agent picks it up automatically
+The orchestrator resolves the dependency graph. The QP system validates proofs. The human queue shows any steps needing approval.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| `qp/effects.ts` | The constitutional boundary — effect gateway |
+| `qp/kernel.ts` | QP core (Actuality, Claim, ProofSpec, Receipt, Replay) |
+| `qp/judges.ts` | 6 judges + 3 gates |
+| `qp/authority.ts` | Ed25519 grants |
+| `qp/social/executor.ts` | SocialExecutor interface + PostizAdapter |
 | `targets/*.json` | Platform definitions (11 targets) |
-| `src/targets.ts` | Dependency resolver + cost calculator |
-| `src/verifiers.ts` | QP gate verifiers (pure functions) |
-| `src/capacity.ts` | Capacity registry + proof generation |
-| `src/social-rules.ts` | Per-platform username rules |
-| `scripts/verify-capacity.sh` | 7-layer infrastructure proof |
-| `scripts/check-identity.sh` | Handle check (Apify + format + domain) |
-| `docs/API-REFERENCE.md` | YouTube, Instagram, TikTok, X API docs |
-| `docs/API-SETUP-PATHS.md` | Exact setup steps per platform |
-| `SPEC-QP-FULL-CHAIN.md` | Full dependency grid + QP formalism |
-| `examples/*.md` | Complete walkthrough examples |
+| `src/mcp.ts` | 37 MCP tools |
+| `src/verifiers.ts` | QP-backed verifiers |
+| `src/targets.ts` | Dependency resolver + costs |
+| `scripts/check-identity.sh` | Handle availability check |
+| `scripts/verify-capacity.sh` | Infrastructure proof |
+| `proofspecs/*.json` | 13 immutable ProofSpecs |
 
 ## Deployed
 
@@ -150,8 +173,16 @@ X_CLIENT_ID, X_CLIENT_SECRET, X_BEARER_TOKEN
 - **MCP:** `https://cmail.tradesprior.workers.dev/mcp`
 - **Dashboard:** `https://cmail.tradesprior.workers.dev/ui/`
 
-## Extending the System
+## Peer Review Status
 
-Add a new platform = copy `targets/_template.json`, fill in blanks. Agent picks it up automatically.
-
-The QP proof system validates it. The dependency grid incorporates it. The cost calculator includes it. No code changes needed.
+| Item | Status |
+|------|--------|
+| P0-1: Auth spoof | ✅ Fixed |
+| P0-2: Effect gateway | ✅ Fixed |
+| P0-3: Fabricated evidence | ✅ Fixed |
+| Kernel 1.1: Judge hashes | ✅ Fixed |
+| Kernel 1.6: State transition | ✅ Fixed |
+| Kernel 1.2: actuality_dag | ⏳ Next |
+| Kernel 1.3: Evidence integrity | ⏳ Next |
+| Kernel 1.4: Freshness strict | ⏳ Next |
+| Kernel 1.5: Claim bound to root | ⏳ Next |

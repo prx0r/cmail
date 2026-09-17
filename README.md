@@ -19,17 +19,22 @@ Pick a name → check handles across all platforms → buy domain → wire email
 
 ---
 
-## The QP Proof System
+## The QP Effect Gateway (Constitutional Boundary)
 
-Every capacity produces a QP receipt — deterministic, verifiable, append-only.
+**QP is the only way to cause consequential effects.** No direct provider mutators from MCP.
 
 ```
-Agent proposes → QP validates authority → executes via adapter →
-independent readback → judges evaluate → TRUE/FALSE/UNKNOWN →
-TransitionReceipt → canonical state
+MCP creates proposal + grant
+  → executeEffect()
+  → validates grant (Ed25519 signature, expiry, action match)
+  → reserves grant (atomic, single-use, replay-protected)
+  → executes via adapter (Postiz / direct API)
+  → independent readback (NOT from adapter — calls platform directly)
+  → judges readback evidence (TRUE / FALSE / UNKNOWN)
+  → settles: TransitionReceipt (content-addressed, append-only)
 ```
 
-**Key invariant:** Postiz says success → that's evidence. QP asks the platform independently → that's proof.
+Postiz says success → that's evidence. QP asks the platform independently → that's proof.
 
 | Component | File | Purpose |
 |-----------|------|---------|
