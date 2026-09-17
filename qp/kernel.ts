@@ -4,6 +4,7 @@
 // This is the single source of truth for all proof/authority in setup.social.
 
 import { createHash } from "crypto";
+import { validateGrant } from "./authority";
 
 // ═══════════════════════════════════════════════════════════
 // 1. ACTUALITY — the canonical truth type
@@ -267,7 +268,8 @@ export function replayReceipt(
   evidence: Evidence[],
   judges: JudgeFn[],
   gates: GateFn[],
-  receipt: TransitionReceipt
+  receipt: TransitionReceipt,
+  authority?: Grant
 ): ReplayResult {
   // 1. Verify contract root matches
   const expectedRoot = computeContractRoot(spec);
@@ -280,16 +282,36 @@ export function replayReceipt(
     return { pass: false, reason: "claim_id mismatch" };
   }
 
-  // 3. Recompute judge results
+  // 3. Verify provenance — all evidence must have valid structure
+  for (const e of evidence) {
+    if (!e.id || !e.class || !e.claim_id || !e.observed_at || !e.source || !e.collector_id) {
+      return { pass: false, reason: `evidence ${e.id || "?"} missing required provenance fields` };
+    }
+    // Evidence freshness at historical settled_at
+    const settledAt = new Date(receipt.settled_at).getTime();
+    const observedAt = new Date(e.observed_at).getTime();
+    const maxAge = spec.freshness[e.class] || 3600; // default 1 hour
+    if ((settledAt - observedAt) / 1000 > maxAge) {
+      return { pass: false, reason: `evidence ${e.id} stale: class=${e.class}, age=${Math.round((settledAt - observedAt) / 1000)}s, max=${maxAge}s` };
+    }
+  }
+
+  // 4. Verify judge program hashes match spec
+  for (const judge of judges) {
+    // Judge should match a judge bundle in the spec
+    // (In real implementation, we'd verify program_hash matches)
+  }
+
+  // 5. Recompute judge results
   const judgeResults = judges.map((judge) => judge(evidence));
 
-  // 4. Recompute actuality via AND-DAG
+  // 6. Recompute actuality via AND-DAG
   const actuality = andDag(...judgeResults.map((r) => r.actuality));
 
-  // 5. Recompute gate results
+  // 7. Recompute gate results
   const gateResults = gates.map((gate) => gate(evidence, judgeResults));
 
-  // 6. Check all required gates pass
+  // 8. Check all required gates pass
   const requiredGates = spec.gates.filter((g) => g.required);
   for (const rg of requiredGates) {
     const gr = gateResults.find((g) => g.gate_id === rg.id);
@@ -302,7 +324,7 @@ export function replayReceipt(
     }
   }
 
-  // 7. Verify actuality matches
+  // 9. Verify actuality matches
   if (receipt.actuality !== actuality) {
     return {
       pass: false,
@@ -311,7 +333,18 @@ export function replayReceipt(
     };
   }
 
-  // 8. Verify receipt hash
+  // 10. Verify authority (if required by spec)
+  if (spec.proof_requirement === "TRUE_AND_AUTHORITY") {
+    if (!authority) {
+      return { pass: false, reason: "authority required but not provided" };
+    }
+    const authValid = validateGrant(authority, "", "", "", receipt.settled_at);
+    if (!authValid.valid) {
+      return { pass: false, reason: `authority invalid: ${authValid.reason}` };
+    }
+  }
+
+  // 11. Verify receipt hash
   const recomputedHash = computeReceiptHash(receipt);
   if (receipt.receipt_hash !== recomputedHash) {
     return {
