@@ -19,8 +19,8 @@ export function judgeDnsValid(evidence: Evidence[]): JudgeResult {
     return { judge_id: "dns_valid_v1", bundle_hash: "", actuality: "UNKNOWN", reasons: ["no dns evidence"], evidence_ids: [] };
   }
 
-  const hasMX = relevant.some((e) => /route\d+\.mx\.cloudflare\.net/.test(e.response_hash));
-  const hasSPF = relevant.some((e) => /v=spf1/.test(e.response_hash));
+  const hasMX = relevant.some((e) => /route\d+\.mx\.cloudflare\.net/.test(e.response_payload));
+  const hasSPF = relevant.some((e) => /v=spf1/.test(e.response_payload));
 
   if (hasMX && hasSPF) {
     return { judge_id: "dns_valid_v1", bundle_hash: "", actuality: "TRUE", reasons: ["MX records present", "SPF present"], evidence_ids: relevant.map((e) => e.id) };
@@ -43,7 +43,7 @@ export function judgeCfZoneActive(evidence: Evidence[]): JudgeResult {
     return { judge_id: "cf_zone_active_v1", bundle_hash: "", actuality: "UNKNOWN", reasons: ["no CF zone evidence"], evidence_ids: [] };
   }
 
-  const active = relevant.some((e) => /"status"\s*:\s*"active"/.test(e.response_hash));
+  const active = relevant.some((e) => /"status"\s*:\s*"active"/.test(e.response_payload));
   return {
     judge_id: "cf_zone_active_v1",
     bundle_hash: "",
@@ -67,11 +67,11 @@ export function judgeEmailInfrastructure(evidence: Evidence[]): JudgeResult {
   }
 
   const checks = {
-    mx: relevant.some((e) => e.class === "dns_answer" && /cloudflare/.test(e.response_hash)),
-    spf: relevant.some((e) => e.class === "dns_answer" && /v=spf1/.test(e.response_hash)),
-    routing: relevant.some((e) => e.class === "api_response" && /routing/.test(e.source)),
-    worker: relevant.some((e) => e.class === "worker_stats" && /needs_me/.test(e.response_hash)),
-    mailbox: relevant.some((e) => e.class === "api_response" && /mailbox/.test(e.source)),
+    mx: relevant.some((e) => e.class === "dns_answer" && /cloudflare/.test(e.response_payload)),
+    spf: relevant.some((e) => e.class === "dns_answer" && /v=spf1/.test(e.response_payload)),
+    routing: relevant.some((e) => e.class === "routing_config" || (e.class === "api_response" && /routing/.test(e.response_payload))),
+    worker: relevant.some((e) => e.class === "worker_stats" && /needs_me/.test(e.response_payload)),
+    mailbox: relevant.some((e) => e.class === "api_response" && /mailbox/.test(e.response_payload)),
   };
 
   const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
@@ -99,7 +99,7 @@ export function judgeHandleAvailable(evidence: Evidence[]): JudgeResult {
     return { judge_id: "handle_available_v1", bundle_hash: "", actuality: "UNKNOWN", reasons: ["no handle check evidence"], evidence_ids: [] };
   }
 
-  const available = relevant.every((e) => /available.*yes/.test(e.response_hash) || /status.*available/.test(e.response_hash));
+  const available = relevant.every((e) => /available.*yes/.test(e.response_payload) || /status.*available/.test(e.response_payload));
   return {
     judge_id: "handle_available_v1",
     bundle_hash: "",
@@ -120,7 +120,7 @@ export function judgeAccountCreated(evidence: Evidence[]): JudgeResult {
     return { judge_id: "account_created_v1", bundle_hash: "", actuality: "UNKNOWN", reasons: ["no signup evidence"], evidence_ids: [] };
   }
 
-  const created = relevant.some((e) => /success|created|account_id/.test(e.response_hash));
+  const created = relevant.some((e) => /success|created|account_id/.test(e.response_payload));
   return {
     judge_id: "account_created_v1",
     bundle_hash: "",
@@ -141,7 +141,7 @@ export function judgeOAuthAuthorized(evidence: Evidence[]): JudgeResult {
     return { judge_id: "oauth_authorized_v1", bundle_hash: "", actuality: "UNKNOWN", reasons: ["no OAuth evidence"], evidence_ids: [] };
   }
 
-  const authorized = relevant.some((e) => /access_token/.test(e.response_hash));
+  const authorized = relevant.some((e) => /access_token/.test(e.response_payload));
   return {
     judge_id: "oauth_authorized_v1",
     bundle_hash: "",
@@ -207,12 +207,14 @@ export function gateNoUnknownRequired(evidence: Evidence[], judgeResults: JudgeR
  * Gate: evidence_fresh
  * Returns FALSE if any evidence exceeds freshness threshold
  */
+// #6 FIX: Always pass reference timestamp (never use Date.now())
 export function gateEvidenceFresh(
   evidence: Evidence[],
   judgeResults: JudgeResult[],
+  referenceTime: string,  // ISO timestamp, NOT Date.now()
   maxAgeSeconds: number = 3600
 ): GateResult {
-  const now = Date.now();
+  const now = new Date(referenceTime).getTime();
   const stale = evidence.filter((e) => {
     const observed = new Date(e.observed_at).getTime();
     return (now - observed) / 1000 > maxAgeSeconds;

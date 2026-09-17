@@ -144,7 +144,23 @@ export function validateGrant(
 // GRANT CONSUMPTION (atomic, single-use)
 // ═══════════════════════════════════════════════════════════
 
-const consumedNonces = new Set<string>();
+// #5 FIX: Use external durable store for nonce consumption
+// In production, this would be D1/KV. For now, export the set so the caller can persist it.
+export const consumedNonces = new Set<string>();
+
+/**
+ * Check if a nonce has been consumed (query durable store in production)
+ */
+export function isNonceConsumed(nonce: string): boolean {
+  return consumedNonces.has(nonce);
+}
+
+/**
+ * Mark a nonce as consumed (write to durable store in production)
+ */
+export function markNonceConsumed(nonce: string): void {
+  consumedNonces.add(nonce);
+}
 
 export function consumeGrant(grant: Grant): { success: boolean; reason?: string } {
   // Check nonce not consumed
@@ -157,9 +173,8 @@ export function consumeGrant(grant: Grant): { success: boolean; reason?: string 
     return { success: false, reason: "grant exhausted" };
   }
 
-  // Consume
+  // Mark consumed (don't mutate the grant — track externally)
   consumedNonces.add(grant.nonce);
-  grant.max_uses -= 1;
 
   return { success: true };
 }

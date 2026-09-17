@@ -1,14 +1,12 @@
-// verifiers.ts — Rebuilt with QP Actuality semantics
+// verifiers.ts — Rebuilt with QP Actuality semantics + #3 fix (response_payload)
 // Now delegates to qp/judges.ts for actual evaluation.
-// This file provides the backward-compatible interface.
 
+import { createHash } from "crypto";
 import type { Actuality } from "../qp/kernel";
 import { judgeDnsValid, judgeCfZoneActive, judgeEmailInfrastructure, judgeHandleAvailable, judgeAccountCreated, judgeOAuthAuthorized } from "../qp/judges";
 import type { Evidence, JudgeResult } from "../qp/kernel";
 
 export type { Actuality } from "../qp/kernel";
-
-// ─── Legacy interface (maps to QP judges) ──────────────────
 
 export interface VerifyResult {
   actuality: Actuality;
@@ -17,26 +15,40 @@ export interface VerifyResult {
 }
 
 function sha256(data: string): string {
-  return require("crypto").createHash("sha256").update(data).digest("hex");
+  return createHash("sha256").update(data).digest("hex");
+}
+
+// Helper: create evidence with both response_payload and response_hash
+function makeEvidence(overrides: Partial<Evidence> & { response_content: string }): Evidence {
+  const content = overrides.response_content;
+  return {
+    id: "ev:" + sha256(content + Math.random()),
+    class: "dns_answer",
+    claim_id: "",
+    observed_at: new Date().toISOString(),
+    source: "unknown",
+    locator: "",
+    collector_id: "verifier",
+    collector_program_hash: sha256("verifier"),
+    collector_runtime_hash: "node:20",
+    response_payload: content,
+    response_hash: sha256(content),
+    normalized_payload_hash: sha256(content),
+    independence_group: "default",
+    ...overrides,
+  } as Evidence;
 }
 
 // ─── have_domain ───────────────────────────────────────────
 export function verifyDomain(evidence: string): VerifyResult {
-  const ev: Evidence = {
-    id: "ev:" + sha256(evidence),
+  const ev = makeEvidence({
+    response_content: evidence,
     class: "dns_answer",
-    claim_id: "",
-    observed_at: new Date().toISOString(),
     source: "cloudflare-dns.com",
     locator: "dns:domain/MX",
     collector_id: "verify-capacity.sh",
-    collector_program_hash: "bash",
-    collector_runtime_hash: "bash",
-    response_hash: evidence,
-    normalized_payload_hash: sha256(evidence),
     independence_group: "dns",
-  };
-
+  });
   const result = judgeDnsValid([ev]);
   return { actuality: result.actuality, reason: result.reasons.join(", "), evidence_hash: sha256(evidence) };
 }
@@ -60,28 +72,30 @@ export function verifyReceiveEmail(evidence: string): VerifyResult {
   try { e = JSON.parse(evidence); } catch { return { actuality: "UNKNOWN", reason: "invalid JSON", evidence_hash: hash }; }
 
   const evidenceItems: Evidence[] = [
-    {
-      id: "ev:" + hash, class: "dns_answer", claim_id: "",
-      observed_at: new Date().toISOString(), source: "dns",
-    locator: "dns:domain/MX", collector_id: "verify", collector_program_hash: "bash",
-    collector_runtime_hash: "bash", response_hash: (e.mx_records || []).join(" ") + " " + (e.spf_record || ""),
-      normalized_payload_hash: hash, independence_group: "email-infra",
-    },
-    {
-      id: "ev:" + hash + ":zone", class: "api_response", claim_id: "",
-      observed_at: new Date().toISOString(), source: "cloudflare",
-      locator: "cf:zone/" + e.zone_id, collector_id: "cf-api", collector_program_hash: "bash",
-      collector_runtime_hash: "bash",     response_hash: e.zone_status || "unknown",
-      normalized_payload_hash: hash, independence_group: "email-infra",
-    },
-    {
-      id: "ev:" + hash + ":worker", class: "worker_stats", claim_id: "",
-      observed_at: new Date().toISOString(), source: "cmail-worker",
-      locator: "https://cmail.tradesprior.workers.dev/api/stats", collector_id: "curl",
-      collector_program_hash: "bash", collector_runtime_hash: "bash",
-      response_hash: e.worker_live ? "needs_me" : "unreachable",
-      normalized_payload_hash: hash, independence_group: "email-infra",
-    },
+    makeEvidence({
+      response_content: (e.mx_records || []).join(" ") + " " + (e.spf_record || ""),
+      class: "dns_answer",
+      source: "dns",
+      locator: "dns:domain/MX",
+      collector_id: "verify",
+      independence_group: "email-infra",
+    }),
+    makeEvidence({
+      response_content: e.zone_status || "unknown",
+      class: "api_response",
+      source: "cloudflare",
+      locator: "cf:zone/" + e.zone_id,
+      collector_id: "cf-api",
+      independence_group: "email-infra",
+    }),
+    makeEvidence({
+      response_content: e.worker_live ? "needs_me" : "unreachable",
+      class: "worker_stats",
+      source: "cmail-worker",
+      locator: "https://cmail.tradesprior.workers.dev/api/stats",
+      collector_id: "curl",
+      independence_group: "email-infra",
+    }),
   ];
 
   const judgeResult = judgeEmailInfrastructure(evidenceItems);
@@ -94,14 +108,15 @@ export function verifyHandle(evidence: string): VerifyResult {
   let e: { platform: string; status: string };
   try { e = JSON.parse(evidence); } catch { return { actuality: "UNKNOWN", reason: "invalid JSON", evidence_hash: hash }; }
 
-  const ev: Evidence = {
-    id: "ev:" + hash, class: "handle_check", claim_id: "",
-    observed_at: new Date().toISOString(), source: e.platform,
-    locator: `${e.platform}:handle`, collector_id: "apify",
-    collector_program_hash: "apify", collector_runtime_hash: "node",
-    response_hash: evidence, normalized_payload_hash: hash,
+  const ev = makeEvidence({
+    response_content: evidence,
+    class: "handle_check",
+    source: e.platform,
+    locator: `${e.platform}:handle`,
+    collector_id: "apify",
+    collector_program_hash: sha256("apify"),
     independence_group: "handle",
-  };
+  });
 
   const result = judgeHandleAvailable([ev]);
   return { actuality: result.actuality, reason: result.reasons.join(", "), evidence_hash: hash };
@@ -124,14 +139,14 @@ export function verifyPhone(evidence: string): VerifyResult {
 // ─── have_cloudflare_zone ──────────────────────────────────
 export function verifyCFZone(evidence: string): VerifyResult {
   const hash = sha256(evidence);
-  const ev: Evidence = {
-    id: "ev:" + hash, class: "api_response", claim_id: "",
-    observed_at: new Date().toISOString(), source: "cloudflare",
-    locator: "cf:zone", collector_id: "cf-api", collector_program_hash: "bash",
-    collector_runtime_hash: "bash", response_hash: evidence,
-    normalized_payload_hash: hash, independence_group: "zone",
-  };
-
+  const ev = makeEvidence({
+    response_content: evidence,
+    class: "api_response",
+    source: "cloudflare",
+    locator: "cf:zone",
+    collector_id: "cf-api",
+    independence_group: "zone",
+  });
   const result = judgeCfZoneActive([ev]);
   return { actuality: result.actuality, reason: result.reasons.join(", "), evidence_hash: hash };
 }

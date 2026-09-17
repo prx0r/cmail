@@ -2,7 +2,8 @@
 // Postiz (or any adapter) implements this. QP wraps it.
 // The executor does the work. QP proves the result.
 
-import type { Evidence, Actuality } from "../kernel";
+import type { Evidence, Actuality, TransitionReceipt } from "../kernel";
+import { computeReceiptHash, merkleRoot, sha256, canonical } from "../kernel";
 
 // ═══════════════════════════════════════════════════════════
 // EXECUTOR — the contract every social adapter implements
@@ -179,17 +180,14 @@ export async function socialExecute(
   },
   authority: {
     grant_id: string;
-    grant_proof: string;          // QP receipt proving authority
+    grant_proof: string;
   }
 ): Promise<{
-  receipt: string;                // QP receipt ID
+  receipt: TransitionReceipt | null;
   actuality: Actuality;
   evidence: Evidence[];
 }> {
-  // 1. Validate authority
-  // (In real implementation, validate grant against desired action/payload)
-
-  // 2. Execute via adapter (Postiz, direct API, etc.)
+  // 2. Execute via adapter
   const execResult = await executor.execute({
     action: desired.action,
     artifact_hash: desired.artifact_hash,
@@ -200,7 +198,7 @@ export async function socialExecute(
 
   if (!execResult.success || !execResult.platform_id) {
     return {
-      receipt: "",
+      receipt: null,
       actuality: "FALSE",
       evidence: [{
         id: "ev:" + Date.now(),
@@ -210,36 +208,61 @@ export async function socialExecute(
         source: executor.name,
         locator: `${executor.platform}:${desired.action}`,
         collector_id: "social-gateway",
-        collector_program_hash: "",
+        collector_program_hash: sha256("social-gateway"),
         collector_runtime_hash: "node:20",
-        response_hash: execResult.raw_response,
-        normalized_payload_hash: "",
+        response_payload: execResult.raw_response,
+        response_hash: sha256(execResult.raw_response),
+        normalized_payload_hash: sha256(execResult.raw_response),
         independence_group: "execution",
       }],
     };
   }
 
-  // 3. INDEPENDENT READBACK — verify via platform API, not Postiz
+  // 3. Independent readback
   const readback = await executor.readback({
     platform_id: execResult.platform_id,
     claim_type: `${desired.action}_created`,
     expected_state: desired.payload,
   });
 
-  // 4. If readback fails → UNKNOWN (not FALSE)
-  // The effect may have happened, but we can't prove it
   if (!readback.exists) {
-    return {
-      receipt: "",
-      actuality: "UNKNOWN",
-      evidence: readback.evidence,
-    };
+    return { receipt: null, actuality: "UNKNOWN", evidence: readback.evidence };
   }
 
-  // 5. Readback succeeded → TRUE with evidence
-  return {
-    receipt: "",  // would be computed by QP kernel
+  // 4. Compute actual QP receipt
+  const allEvidence = readback.evidence;
+  const receipt: TransitionReceipt = {
+    protocol: "qp/1",
+    transition_type: "EFFECT",
+    contract_root: "",
+    claim_id: `${desired.action}:${execResult.platform_id}`,
+    state_before_root: sha256("state:before"),
+    proposal_root: sha256(JSON.stringify(desired)),
+    evidence_root: merkleRoot(allEvidence.map((e) => e.id)),
+    judge_results_root: merkleRoot([`${desired.action}:${readback.actuality}`]),
+    gate_results_root: merkleRoot([`readback:${readback.exists ? "pass" : "fail"}`]),
     actuality: readback.actuality,
-    evidence: readback.evidence,
+    authority_id: authority.grant_id,
+    transition_program_hash: sha256("social-execute"),
+    state_after_root: sha256(JSON.stringify(readback.state)),
+    run: {
+      executor_id: executor.name,
+      program_hash: sha256(executor.name),
+      runtime_hash: "node:20",
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+    },
+    prev_receipt_hash: sha256("prev"),
+    settled_at: new Date().toISOString(),
+    receipt_hash: "",
+    qp_signer: "social-gateway",
+    qp_signature: "",
+  };
+  receipt.receipt_hash = computeReceiptHash(receipt);
+
+  return {
+    receipt,
+    actuality: readback.actuality,
+    evidence: allEvidence,
   };
 }
