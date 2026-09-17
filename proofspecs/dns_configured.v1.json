@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "dns_configured",
+    "version": 1,
+    "description": "Authoritative DNS for D matches frozen expected config C",
+    "judges": [
+        {
+            "id": "judge_dns_match",
+            "program_hash": "sha256:judgeDnsMatch",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "dns_answer": 3600
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "all required records exactly match",
+        "FALSE": "authoritative answers decisively contradict",
+        "UNKNOWN": "propagation, SERVFAIL, timeout, provider outage"
+    }
+}

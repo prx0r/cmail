@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "handle_bound",
+    "version": 1,
+    "description": "Owned account ID is currently bound to exact handle H",
+    "judges": [
+        {
+            "id": "judge_handle_bound",
+            "program_hash": "sha256:judgeHandleBound",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "profile_readback": 3600
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "exact account ID and exact handle reconcile",
+        "FALSE": "handle mismatch",
+        "UNKNOWN": "API unavailable, auth failure"
+    }
+}

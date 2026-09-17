@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "account_owned",
+    "version": 1,
+    "description": "Controlled credential authenticates as exact platform account ID",
+    "judges": [
+        {
+            "id": "judge_account_authenticated",
+            "program_hash": "sha256:judgeAccountAuthenticated",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "provider_me_endpoint": 3600
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "authenticated provider evidence binds controlled credential to exact account ID",
+        "FALSE": "readback contradicts account ownership",
+        "UNKNOWN": "auth failure, API unavailable"
+    }
+}

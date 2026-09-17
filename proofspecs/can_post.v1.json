@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "can_post",
+    "version": 1,
+    "description": "Current authorization permits frozen write-operation class",
+    "judges": [
+        {
+            "id": "judge_can_post",
+            "program_hash": "sha256:judgeCanPost",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "permission_readback": 3600
+    },
+    "proof_requirement": "TRUE_AND_AUTHORITY",
+    "rules": {
+        "TRUE": "account_owned + oauth_authorized + provider permission",
+        "FALSE": "write not permitted",
+        "UNKNOWN": "auth failure, API unavailable"
+    }
+}

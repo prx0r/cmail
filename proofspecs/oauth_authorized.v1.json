@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "oauth_authorized",
+    "version": 1,
+    "description": "Controlled principal has active authorization with required scope set",
+    "judges": [
+        {
+            "id": "judge_oauth_valid",
+            "program_hash": "sha256:judgeOAuthValid",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "token_introspection": 3600
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "provider evidence proves required scopes",
+        "FALSE": "scope mismatch or token invalid",
+        "UNKNOWN": "auth failure, token expired"
+    }
+}

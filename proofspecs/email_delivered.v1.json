@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "email_delivered",
+    "version": 1,
+    "description": "Independent downstream receipt proves delivery",
+    "judges": [
+        {
+            "id": "judge_delivered",
+            "program_hash": "sha256:judgeDelivered",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "delivery_receipt": 3600
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "independent readback/controlled-inbox confirms delivery",
+        "FALSE": "bounce or delivery failure",
+        "UNKNOWN": "timeout, no confirmation"
+    }
+}

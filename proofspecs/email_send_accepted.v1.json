@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "email_send_accepted",
+    "version": 1,
+    "description": "Provider accepted exact payload and returned canonical provider ID",
+    "judges": [
+        {
+            "id": "judge_send_accepted",
+            "program_hash": "sha256:judgeSendAccepted",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "send_confirmation": 300
+    },
+    "proof_requirement": "TRUE_AND_AUTHORITY",
+    "rules": {
+        "TRUE": "provider returned canonical message ID",
+        "FALSE": "provider rejected payload",
+        "UNKNOWN": "timeout, auth failure"
+    }
+}

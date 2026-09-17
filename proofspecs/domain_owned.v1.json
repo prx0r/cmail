@@ -1,0 +1,23 @@
+{
+  "protocol": "qp/1",
+  "spec_id": "domain_owned",
+  "version": 1,
+  "description": "Domain D is an owned/managed registration in expected registrar account A",
+  "claim_schema_hash": "sha256:domain_owned_schema",
+  "evidence_schema_hash": "sha256:registrar_readback_schema",
+  "actuality_dag": ["judge_registrar_owns"],
+  "judges": [{ "id": "judge_registrar_owns", "program_hash": "sha256:judgeRegistrarOwns", "runtime_hash": "node:20", "config_hash": "sha256:default", "dependencies_hash": "sha256:none", "bundle_hash": "" }],
+  "gates": [{ "id": "all_judges_pass", "program_hash": "sha256:all_judges_pass", "required": true }],
+  "freshness": { "registrar_readback": 3600 },
+  "provenance_policy_hash": "sha256:standard",
+  "independence_policy_hash": "sha256:independent_readback_required",
+  "transition_program_hash": "sha256:resolve",
+  "authority_policy_hash": "sha256:purchase_grant_required",
+  "proof_requirement": "TRUE_AND_AUTHORITY",
+  "rules": {
+    "TRUE": "readback returns D in A with acceptable active/registered state",
+    "FALSE": "authoritative readback decisively contradicts ownership",
+    "UNKNOWN": "API unavailable, auth failure, eventual consistency, ambiguous state",
+    "critical": ["Purchase requires signed one-shot authority bound to exact purchase payload", "Provider POST success alone does not settle domain_owned"]
+  }
+}

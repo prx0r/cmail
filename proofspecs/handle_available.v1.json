@@ -1,0 +1,32 @@
+{
+    "protocol": "qp/1",
+    "spec_id": "handle_available",
+    "version": 1,
+    "description": "Platform probe indicates H is unassigned/available",
+    "judges": [
+        {
+            "id": "judge_handle_available",
+            "program_hash": "sha256:judgeHandleAvailable",
+            "runtime_hash": "node:20",
+            "config_hash": "sha256:default",
+            "dependencies_hash": "sha256:none",
+            "bundle_hash": ""
+        }
+    ],
+    "gates": [
+        {
+            "id": "all_judges_pass",
+            "program_hash": "sha256:all_judges_pass",
+            "required": true
+        }
+    ],
+    "freshness": {
+        "handle_check": 300
+    },
+    "proof_requirement": "TRUE",
+    "rules": {
+        "TRUE": "fresh admissible evidence says available",
+        "FALSE": "admissible evidence says taken",
+        "UNKNOWN": "captcha, rate limit, wall, no signal, ambiguous"
+    }
+}
